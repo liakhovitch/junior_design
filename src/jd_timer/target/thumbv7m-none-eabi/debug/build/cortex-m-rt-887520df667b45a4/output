@@ -1,0 +1,6 @@
+cargo:rustc-link-lib=static=cortex-m-rt
+cargo:rustc-cfg=cortex_m
+cargo:rustc-cfg=armv7m
+cargo:rustc-link-search=/home/liakhova/Documents/ece341/junior_design/src/jd_timer/target/thumbv7m-none-eabi/debug/build/cortex-m-rt-887520df667b45a4/out
+cargo:rerun-if-changed=build.rs
+cargo:rerun-if-changed=link.x.in

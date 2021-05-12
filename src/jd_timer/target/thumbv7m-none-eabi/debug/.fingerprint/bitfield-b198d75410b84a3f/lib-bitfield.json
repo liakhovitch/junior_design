@@ -1,0 +1,1 @@
+{"rustc":6339714466149818003,"features":"[]","target":12389084935491522239,"profile":7676108861657965302,"path":17804045658436154434,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"thumbv7m-none-eabi/debug/.fingerprint/bitfield-b198d75410b84a3f/dep-lib-bitfield"}}],"rustflags":["-C","link-arg=--nmagic","-C","link-arg=-Tlink.x"],"metadata":13114019227619237509,"config":0}

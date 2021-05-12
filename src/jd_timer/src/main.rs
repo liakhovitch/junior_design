@@ -10,6 +10,7 @@ peripherals = true, dispatchers = [DMA1_CHANNEL1,DMA1_CHANNEL2,DMA1_CHANNEL3])]
 mod app {
 
     use stm32f1xx_hal::{
+        adc::Adc,
         prelude::*,
         serial,
         gpio::{
@@ -18,9 +19,11 @@ mod app {
             {Output, PushPull},
             {Input, PullUp},
             {Alternate, OpenDrain},
+            Edge::*,
+            ExtiPin,
         },
         timer::{Event, Timer},
-        pac::{I2C1, USART1},
+        pac::{I2C1, USART1, ADC1},
         i2c::{BlockingI2c, DutyCycle, Mode},
     };
 
@@ -39,6 +42,7 @@ mod app {
 
     use core::fmt::Write;
     use core::future::Future;
+    use stm32f1xx_hal::gpio::Analog;
 
     // Resources shared by all handlers
     #[resources]
@@ -48,6 +52,8 @@ mod app {
         EXTI: stm32f1xx_hal::pac::EXTI,
         clocks: stm32f1xx_hal::rcc::Clocks,
         serial: (serial::Tx<USART1>, serial::Rx<USART1>),
+        adc1: Adc<ADC1>,
+        pot: PA4<Analog>
     }
 
     // Init function (duh)
@@ -78,9 +84,32 @@ mod app {
         let mut gpioa = cx.device.GPIOA.split(&mut rcc.apb2);
         let mut gpiob = cx.device.GPIOB.split(&mut rcc.apb2);
 
-        // Configure button inputs
-        let button_start = gpiob.pb5.into_pull_up_input(&mut gpiob.crl);
-        let button_brightness = gpiob.pb6.into_pull_up_input(&mut gpiob.crl);
+        // -----------
+        // Init buttons
+        // -----------
+        // Start timer button
+        let mut button_start = gpiob.pb5.into_pull_up_input(&mut gpiob.crl);
+        button_start.make_interrupt_source(&mut afio);
+        button_start.trigger_on_edge(&cx.device.EXTI, FALLING);
+        button_start.enable_interrupt(&cx.device.EXTI);
+        // Brightness button
+        let mut button_brightness = gpiob.pb6.into_pull_up_input(&mut gpiob.crl);
+        button_brightness.make_interrupt_source(&mut afio);
+        button_brightness.trigger_on_edge(&cx.device.EXTI, FALLING);
+        button_brightness.enable_interrupt(&cx.device.EXTI);
+        // Note: Both buttons trigger the EXTI9_5 interrupt.
+        // Small rant:
+        // This feature is undocumented in the MOTHERTRUCKING hal documentation so I did all this
+        // using unsafe direct memory writes in a previous project. I got lucky here and stumbled
+        // on this in the library source code.
+
+        // ------------
+        // Init pot adc
+        // ------------
+        // Setup adc1 with default settings
+        let adc1 = Adc::adc1(cx.device.ADC1, &mut rcc.apb2, clocks);
+        // Setup PA4 as analog input
+        let pot = gpioa.pa4.into_analog(&mut gpioa.crl);
 
         // -----------
         // Init serial
@@ -139,6 +168,8 @@ mod app {
             EXTI: cx.device.EXTI,
             clocks,
             serial: (tx, rx),
+            adc1,
+            pot,
         }, init::Monotonics())
     }
 }

@@ -6,20 +6,20 @@
     you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml ; use
     stm32f1xx_hal ::
     {
-        prelude :: *, serial, gpio ::
+        adc :: Adc, prelude :: *, serial, gpio ::
         {
             gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
             { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
-            { Input, PullUp }, { Alternate, OpenDrain },
-        }, timer :: { Event, Timer }, pac :: { I2C1, USART1 }, i2c ::
+            { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *, ExtiPin,
+        }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 }, i2c ::
         { BlockingI2c, DutyCycle, Mode },
     } ; use cortex_m :: asm :: delay ; use ssd1306 ::
     { prelude :: *, Builder, I2CDIBuilder, } ; use embedded_hal :: digital ::
     v2 :: { OutputPin, InputPin } ; use core :: ptr :: write_volatile ; use
-    core :: fmt :: Write ; use core :: future :: Future ;
-    #[doc = r" User code from within the module"] #[doc = r" User code end"]
-    #[allow(non_snake_case)] fn init(cx : init :: Context) ->
-    (init :: LateResources, init :: Monotonics)
+    core :: fmt :: Write ; use core :: future :: Future ; use stm32f1xx_hal ::
+    gpio :: Analog ; #[doc = r" User code from within the module"]
+    #[doc = r" User code end"] #[allow(non_snake_case)] fn
+    init(cx : init :: Context) -> (init :: LateResources, init :: Monotonics)
     {
         let mut core = cx . core ; core . DWT . enable_cycle_counter() ; let
         mut rcc = cx . device . RCC . constrain() ; let mut flash = cx .
@@ -28,9 +28,17 @@
         use_hse(8 . mhz()) . sysclk(72 . mhz()) . pclk1(36 . mhz()) .
         pclk1(36 . mhz()) . freeze(& mut flash . acr) ; let mut gpioa = cx .
         device . GPIOA . split(& mut rcc . apb2) ; let mut gpiob = cx . device
-        . GPIOB . split(& mut rcc . apb2) ; let button_start = gpiob . pb5 .
-        into_pull_up_input(& mut gpiob . crl) ; let button_brightness = gpiob
-        . pb6 . into_pull_up_input(& mut gpiob . crl) ; let tx1_pin = gpioa .
+        . GPIOB . split(& mut rcc . apb2) ; let mut button_start = gpiob . pb5
+        . into_pull_up_input(& mut gpiob . crl) ; button_start .
+        make_interrupt_source(& mut afio) ; button_start .
+        trigger_on_edge(& cx . device . EXTI, FALLING) ; button_start .
+        enable_interrupt(& cx . device . EXTI) ; let mut button_brightness =
+        gpiob . pb6 . into_pull_up_input(& mut gpiob . crl) ;
+        button_brightness . make_interrupt_source(& mut afio) ;
+        button_brightness . trigger_on_edge(& cx . device . EXTI, FALLING) ;
+        button_brightness . enable_interrupt(& cx . device . EXTI) ; let adc1
+        = Adc :: adc1(cx . device . ADC1, & mut rcc . apb2, clocks) ; let pot
+        = gpioa . pa4 . into_analog(& mut gpioa . crl) ; let tx1_pin = gpioa .
         pa9 . into_alternate_push_pull(& mut gpioa . crh) ; let rx1_pin =
         gpioa . pa10 . into_floating_input(& mut gpioa . crh) ; let cfg =
         serial :: Config :: default() . baudrate(115_200 . bps()) ; let usart1
@@ -52,19 +60,20 @@
         (init :: LateResources
          {
              display, buttons : (button_start, button_brightness), EXTI : cx .
-             device . EXTI, clocks, serial : (tx, rx),
+             device . EXTI, clocks, serial : (tx, rx), adc1, pot,
          }, init :: Monotonics())
     } #[allow(non_snake_case)] #[doc = "Initialization function"] pub mod init
     {
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
-            prelude :: *, serial, gpio ::
+            adc :: Adc, prelude :: *, serial, gpio ::
             {
                 gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
                 { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
-                { Input, PullUp }, { Alternate, OpenDrain },
-            }, timer :: { Event, Timer }, pac :: { I2C1, USART1 }, i2c ::
-            { BlockingI2c, DutyCycle, Mode },
+                { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
+                ExtiPin,
+            }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 }, i2c
+            :: { BlockingI2c, DutyCycle, Mode },
         } ; #[allow(unused_imports)] use cortex_m :: asm :: delay ;
         #[allow(unused_imports)] use ssd1306 ::
         { prelude :: *, Builder, I2CDIBuilder, } ; #[allow(unused_imports)]
@@ -72,15 +81,17 @@
         #[allow(unused_imports)] use core :: ptr :: write_volatile ;
         #[allow(unused_imports)] use core :: fmt :: Write ;
         #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use stm32f1xx_hal :: gpio :: Analog ;
         #[doc = r" Resources initialized at runtime"] #[allow(non_snake_case)]
         pub struct LateResources
         {
-            pub EXTI : stm32f1xx_hal :: pac :: EXTI, pub buttons :
+            pub EXTI : stm32f1xx_hal :: pac :: EXTI, pub adc1 : Adc < ADC1 >,
+            pub buttons :
             (PB5 < Input < PullUp > >, PB6 < Input < PullUp > >), pub clocks :
             stm32f1xx_hal :: rcc :: Clocks, pub display : GraphicsMode <
             I2CInterface < BlockingI2c < I2C1,
             (PB8 < Alternate < OpenDrain > >, PB9 < Alternate < OpenDrain > >)
-            > >, DisplaySize128x64 >, pub serial :
+            > >, DisplaySize128x64 >, pub pot : PA4 < Analog >, pub serial :
             (serial :: Tx < USART1 >, serial :: Rx < USART1 >)
         } #[doc = r" Monotonics used by the system"] #[allow(non_snake_case)]
         pub struct Monotonics() ; #[doc = r" Execution context"] pub struct

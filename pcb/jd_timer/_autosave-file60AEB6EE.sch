@@ -1,0 +1,310 @@
+EESchema Schematic File Version 4
+EELAYER 30 0
+EELAYER END
+$Descr A4 11693 8268
+encoding utf-8
+Sheet 3 3
+Title "Egg Timer"
+Date ""
+Rev "1.0"
+Comp "Anton Liakhovitch"
+Comment1 ""
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+$Comp
+L power:GND #PWR?
+U 1 1 60B10E98
+P 4850 2650
+F 0 "#PWR?" H 4850 2400 50  0001 C CNN
+F 1 "GND" H 4855 2477 50  0000 C CNN
+F 2 "" H 4850 2650 50  0001 C CNN
+F 3 "" H 4850 2650 50  0001 C CNN
+	1    4850 2650
+	1    0    0    -1  
+$EndComp
+$Comp
+L Device:R_POT RV?
+U 1 1 60B10E9E
+P 8350 4550
+F 0 "RV?" H 8281 4596 50  0000 R CNN
+F 1 "TIME_POT" H 8281 4505 50  0000 R CNN
+F 2 "" H 8350 4550 50  0001 C CNN
+F 3 "~" H 8350 4550 50  0001 C CNN
+	1    8350 4550
+	-1   0    0    1   
+$EndComp
+$Comp
+L Switch:SW_SP3T SW?
+U 1 1 60B10EA4
+P 3950 3950
+F 0 "SW?" H 3950 4233 50  0000 C CNN
+F 1 "Brightness" H 3950 4142 50  0000 C CNN
+F 2 "" H 3325 4125 50  0001 C CNN
+F 3 "~" H 3325 4125 50  0001 C CNN
+	1    3950 3950
+	1    0    0    -1  
+$EndComp
+$Comp
+L Switch:SW_SPST SW?
+U 1 1 60B10EAA
+P 3950 3500
+F 0 "SW?" H 3950 3735 50  0000 C CNN
+F 1 "Start" H 3950 3644 50  0000 C CNN
+F 2 "" H 3950 3500 50  0001 C CNN
+F 3 "~" H 3950 3500 50  0001 C CNN
+	1    3950 3500
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	5600 2000 5700 2000
+Wire Wire Line
+	5700 2000 5700 2150
+$Comp
+L power:GND #PWR?
+U 1 1 60B10EB3
+P 4250 4750
+F 0 "#PWR?" H 4250 4500 50  0001 C CNN
+F 1 "GND" H 4255 4577 50  0000 C CNN
+F 2 "" H 4250 4750 50  0001 C CNN
+F 3 "" H 4250 4750 50  0001 C CNN
+	1    4250 4750
+	1    0    0    -1  
+$EndComp
+$Comp
+L timer_custom:oled_module U?
+U 1 1 60B10EBA
+P 4050 4550
+F 0 "U?" H 4278 4546 50  0000 L CNN
+F 1 "oled_module" H 4278 4455 50  0000 L CNN
+F 2 "" H 4200 4800 50  0001 C CNN
+F 3 "" H 4200 4800 50  0001 C CNN
+	1    4050 4550
+	-1   0    0    1   
+$EndComp
+Text Notes 5400 1750 0    200  ~ 0
+MCU
+Wire Wire Line
+	4850 2650 5100 2650
+Wire Wire Line
+	5700 2150 5800 2150
+Wire Wire Line
+	5800 2150 5800 2250
+Connection ~ 5700 2150
+Wire Wire Line
+	5700 2150 5700 2250
+Wire Wire Line
+	5800 2150 5900 2150
+Wire Wire Line
+	5900 2150 5900 2250
+Connection ~ 5800 2150
+Wire Wire Line
+	5900 2150 6000 2150
+Wire Wire Line
+	6000 2150 6000 2250
+Connection ~ 5900 2150
+$Comp
+L power:GND #PWR?
+U 1 1 60B10ECC
+P 6300 5500
+F 0 "#PWR?" H 6300 5250 50  0001 C CNN
+F 1 "GND" H 6305 5327 50  0000 C CNN
+F 2 "" H 6300 5500 50  0001 C CNN
+F 3 "" H 6300 5500 50  0001 C CNN
+	1    6300 5500
+	1    0    0    -1  
+$EndComp
+$Comp
+L timer_custom:STM32F103C8Tx U?
+U 1 1 60B10ED2
+P 5800 3750
+F 0 "U?" H 5750 2161 50  0000 C CNN
+F 1 "STM32F103C8Tx" H 5750 2070 50  0000 C CNN
+F 2 "Package_QFP:LQFP-48_7x7mm_P0.5mm" H 5200 2350 50  0001 R CNN
+F 3 "http://www.st.com/st-web-ui/static/active/en/resource/technical/document/datasheet/CD00161566.pdf" H 5800 3750 50  0001 C CNN
+	1    5800 3750
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	5600 5250 5600 5300
+Wire Wire Line
+	5600 5300 5700 5300
+Wire Wire Line
+	5900 5300 5900 5250
+Wire Wire Line
+	5700 5250 5700 5300
+Connection ~ 5700 5300
+Wire Wire Line
+	5700 5300 5800 5300
+Wire Wire Line
+	5800 5250 5800 5300
+Connection ~ 5800 5300
+Wire Wire Line
+	5800 5300 5900 5300
+Wire Wire Line
+	5900 5300 6300 5300
+Wire Wire Line
+	6300 5300 6300 5500
+Connection ~ 5900 5300
+Wire Wire Line
+	4150 4650 4250 4650
+Wire Wire Line
+	4150 4550 4350 4550
+Wire Wire Line
+	4150 4450 5100 4450
+Wire Wire Line
+	5100 4350 4150 4350
+Wire Wire Line
+	4250 4650 4250 4750
+$Comp
+L Connector:Conn_01x03_Male J?
+U 1 1 60B10EE9
+P 7150 4950
+F 0 "J?" H 7122 4882 50  0000 R CNN
+F 1 "Debug" H 7122 4973 50  0000 R CNN
+F 2 "" H 7150 4950 50  0001 C CNN
+F 3 "~" H 7150 4950 50  0001 C CNN
+	1    7150 4950
+	-1   0    0    1   
+$EndComp
+Wire Wire Line
+	6400 4850 6950 4850
+Wire Wire Line
+	6400 4950 6950 4950
+Wire Wire Line
+	6300 5300 6850 5300
+Wire Wire Line
+	6850 5300 6850 5050
+Wire Wire Line
+	6850 5050 6950 5050
+Connection ~ 6300 5300
+Text Label 6550 4850 0    50   ~ 0
+SWDIO
+Text Label 6550 4950 0    50   ~ 0
+SWCLK
+$Comp
+L power:GND #PWR?
+U 1 1 60B10EF7
+P 3600 4000
+F 0 "#PWR?" H 3600 3750 50  0001 C CNN
+F 1 "GND" H 3605 3827 50  0000 C CNN
+F 2 "" H 3600 4000 50  0001 C CNN
+F 3 "" H 3600 4000 50  0001 C CNN
+	1    3600 4000
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	3750 3500 3600 3500
+Wire Wire Line
+	3600 3500 3600 3950
+Wire Wire Line
+	3750 3950 3600 3950
+Connection ~ 3600 3950
+Wire Wire Line
+	3600 3950 3600 4000
+Wire Wire Line
+	4150 4050 4250 4050
+Wire Wire Line
+	4250 4050 4250 4250
+Wire Wire Line
+	4250 4250 5100 4250
+Wire Wire Line
+	5100 4150 4350 4150
+Wire Wire Line
+	4350 4150 4350 3950
+Wire Wire Line
+	4350 3950 4150 3950
+Wire Wire Line
+	5100 4050 4450 4050
+Wire Wire Line
+	4450 4050 4450 3500
+Wire Wire Line
+	4450 3500 4150 3500
+$Comp
+L Connector:Conn_01x03_Male J?
+U 1 1 60B10F0B
+P 7150 4350
+F 0 "J?" H 7122 4282 50  0000 R CNN
+F 1 "Serial" H 7122 4373 50  0000 R CNN
+F 2 "" H 7150 4350 50  0001 C CNN
+F 3 "~" H 7150 4350 50  0001 C CNN
+	1    7150 4350
+	-1   0    0    1   
+$EndComp
+$Comp
+L power:GND #PWR?
+U 1 1 60B10F11
+P 6850 4550
+F 0 "#PWR?" H 6850 4300 50  0001 C CNN
+F 1 "GND" H 6855 4377 50  0000 C CNN
+F 2 "" H 6850 4550 50  0001 C CNN
+F 3 "" H 6850 4550 50  0001 C CNN
+	1    6850 4550
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	6950 4450 6850 4450
+Wire Wire Line
+	6850 4450 6850 4550
+Wire Wire Line
+	6950 4350 6800 4350
+Wire Wire Line
+	6800 4350 6800 4550
+Wire Wire Line
+	6800 4550 6400 4550
+Wire Wire Line
+	6950 4250 6750 4250
+Wire Wire Line
+	6750 4250 6750 4450
+Wire Wire Line
+	6750 4450 6400 4450
+Text Label 6550 4450 0    50   ~ 0
+TX
+Text Label 6550 4550 0    50   ~ 0
+RX
+$Comp
+L power:GND #PWR?
+U 1 1 60B10F21
+P 8350 4900
+F 0 "#PWR?" H 8350 4650 50  0001 C CNN
+F 1 "GND" H 8355 4727 50  0000 C CNN
+F 2 "" H 8350 4900 50  0001 C CNN
+F 3 "" H 8350 4900 50  0001 C CNN
+	1    8350 4900
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	8350 4700 8350 4900
+Wire Wire Line
+	8150 4350 8350 4350
+Wire Wire Line
+	8350 4350 8350 4400
+Wire Wire Line
+	6400 3950 7800 3950
+Wire Wire Line
+	7800 3950 7800 4550
+$Comp
+L Device:Speaker LS?
+U 1 1 60B10F2D
+P 8200 3550
+F 0 "LS?" H 8370 3546 50  0000 L CNN
+F 1 "Buzzer" H 8370 3455 50  0000 L CNN
+F 2 "" H 8200 3350 50  0001 C CNN
+F 3 "~" H 8190 3500 50  0001 C CNN
+	1    8200 3550
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	7800 4550 8200 4550
+Wire Wire Line
+	6400 3550 8000 3550
+Wire Wire Line
+	8000 3650 6400 3650
+Text HLabel 4350 4550 2    50   Input ~ 0
+3v3
+Text HLabel 8150 4350 0    50   Input ~ 0
+3v3
+Text HLabel 5600 2000 0    50   Input ~ 0
+3v3
+$EndSCHEMATC

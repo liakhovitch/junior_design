@@ -125,7 +125,7 @@ dependencies = [
  "cortex-m 0.7.2",
  "cortex-m-rtic-macros",
  "generic-array 0.14.4",
- "heapless",
+ "heapless 0.6.1",
  "rtic-core",
  "rtic-monotonic",
  "version_check",
@@ -253,6 +253,18 @@ checksum = "d7afe4a420e3fe79967a00898cc1f4db7c8a49a9333a29f8a4bd76a253d5cd04"
 
 [[package]]
 name = "heapless"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74911a68a1658cfcfb61bc0ccfbd536e3b6e906f8c2f7883ee50157e3e2184f1"
+dependencies = [
+ "as-slice",
+ "generic-array 0.13.3",
+ "hash32",
+ "stable_deref_trait",
+]
+
+[[package]]
+name = "heapless"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "634bd4d29cbf24424d0a4bfcbf80c6960129dc24424752a7d1d1390607023422"
@@ -282,6 +294,7 @@ dependencies = [
  "cortex-m-rtic",
  "embedded-graphics",
  "embedded-hal",
+ "heapless 0.5.6",
  "panic-halt",
  "profont",
  "ssd1306",

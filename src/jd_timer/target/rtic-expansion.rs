@@ -3,10 +3,10 @@
     #[doc =
       r" Always include the device crate which contains the vector table"] use
     stm32f1xx_hal :: pac as
-    you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml ; use
-    stm32f1xx_hal ::
+    you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml ; use crate
+    :: buttons :: * ; use crate :: pot :: * ; use stm32f1xx_hal ::
     {
-        adc :: Adc, prelude :: *, serial, gpio ::
+        adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
         {
             gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
             { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
@@ -14,10 +14,14 @@
         }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 }, i2c ::
         { BlockingI2c, DutyCycle, Mode },
     } ; use cortex_m :: asm :: delay ; use ssd1306 ::
-    { prelude :: *, Builder, I2CDIBuilder, } ; use embedded_hal :: digital ::
-    v2 :: { OutputPin, InputPin } ; use core :: ptr :: write_volatile ; use
-    core :: fmt :: Write ; use core :: future :: Future ; use stm32f1xx_hal ::
-    gpio :: Analog ; #[doc = r" User code from within the module"]
+    { prelude :: *, Builder, I2CDIBuilder, } ; use embedded_graphics ::
+    {
+        fonts :: Text, pixelcolor :: BinaryColor, prelude :: *, style ::
+        TextStyle,
+    } ; use profont :: ProFont24Point ; use embedded_hal :: digital :: v2 ::
+    { OutputPin, InputPin } ; use core :: ptr :: write_volatile ; use core ::
+    fmt :: Write ; use core :: future :: Future ; use stm32f1xx_hal :: gpio ::
+    Analog ; #[doc = r" User code from within the module"]
     #[doc = r" User code end"] #[allow(non_snake_case)] fn
     init(cx : init :: Context) -> (init :: LateResources, init :: Monotonics)
     {
@@ -36,13 +40,15 @@
         gpiob . pb6 . into_pull_up_input(& mut gpiob . crl) ;
         button_brightness . make_interrupt_source(& mut afio) ;
         button_brightness . trigger_on_edge(& cx . device . EXTI, FALLING) ;
-        button_brightness . enable_interrupt(& cx . device . EXTI) ; let adc1
-        = Adc :: adc1(cx . device . ADC1, & mut rcc . apb2, clocks) ; let pot
-        = gpioa . pa4 . into_analog(& mut gpioa . crl) ; let tx1_pin = gpioa .
-        pa9 . into_alternate_push_pull(& mut gpioa . crh) ; let rx1_pin =
-        gpioa . pa10 . into_floating_input(& mut gpioa . crh) ; let cfg =
-        serial :: Config :: default() . baudrate(115_200 . bps()) ; let usart1
-        = serial :: Serial ::
+        button_brightness . enable_interrupt(& cx . device . EXTI) ; let mut
+        adc1 = Adc :: adc1(cx . device . ADC1, & mut rcc . apb2, clocks) ;
+        adc1 . set_sample_time(SampleTime :: T_239) ; let mut pot = gpioa .
+        pa4 . into_analog(& mut gpioa . crl) ; let mut pot_pos = adc1 .
+        read(& mut pot) . unwrap() ; pot_pos = pot_pos >> 4 ; let tx1_pin =
+        gpioa . pa9 . into_alternate_push_pull(& mut gpioa . crh) ; let
+        rx1_pin = gpioa . pa10 . into_floating_input(& mut gpioa . crh) ; let
+        cfg = serial :: Config :: default() . baudrate(115_200 . bps()) ; let
+        usart1 = serial :: Serial ::
         usart1(cx . device . USART1, (tx1_pin, rx1_pin), & mut afio . mapr,
                cfg, clocks, & mut rcc . apb2,) ; let(tx, rx) = usart1 .
         split() ; let scl = gpiob . pb8 .
@@ -56,17 +62,26 @@
              }, clocks, & mut rcc . apb1, 1000, 10, 1000, 1000,) ; let
         interface = I2CDIBuilder :: new() . init(i2c) ; let mut display :
         GraphicsMode < _, _ > = Builder :: new() . connect(interface) . into()
-        ; display . init() . unwrap() ; display . clear() ;
+        ; display . init() . unwrap() ; display . clear() ; Text ::
+        new("Hello", Point :: new(20, 16)) .
+        into_styled(TextStyle :: new(ProFont24Point, BinaryColor :: On)) .
+        draw(& mut display) . unwrap() ; display . flush() . unwrap() ;
         (init :: LateResources
          {
-             display, buttons : (button_start, button_brightness), EXTI : cx .
-             device . EXTI, clocks, serial : (tx, rx), adc1, pot,
+             display, button_start, button_brightness, EXTI : cx . device .
+             EXTI, clocks, serial : (tx, rx), adc1, pot, pot_pos,
          }, init :: Monotonics())
+    } #[allow(non_snake_case)] fn idle(_cx : idle :: Context) -> !
+    {
+        use rtic :: Mutex as _ ; use rtic :: mutex_prelude :: * ; loop
+        { handle_adc :: spawn() . unwrap() ; }
     } #[allow(non_snake_case)] #[doc = "Initialization function"] pub mod init
     {
+        #[allow(unused_imports)] use crate :: buttons :: * ;
+        #[allow(unused_imports)] use crate :: pot :: * ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
-            adc :: Adc, prelude :: *, serial, gpio ::
+            adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
             {
                 gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
                 { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
@@ -77,21 +92,27 @@
         } ; #[allow(unused_imports)] use cortex_m :: asm :: delay ;
         #[allow(unused_imports)] use ssd1306 ::
         { prelude :: *, Builder, I2CDIBuilder, } ; #[allow(unused_imports)]
-        use embedded_hal :: digital :: v2 :: { OutputPin, InputPin } ;
-        #[allow(unused_imports)] use core :: ptr :: write_volatile ;
-        #[allow(unused_imports)] use core :: fmt :: Write ;
+        use embedded_graphics ::
+        {
+            fonts :: Text, pixelcolor :: BinaryColor, prelude :: *, style ::
+            TextStyle,
+        } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
+        #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
+        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
         #[allow(unused_imports)] use core :: future :: Future ;
         #[allow(unused_imports)] use stm32f1xx_hal :: gpio :: Analog ;
         #[doc = r" Resources initialized at runtime"] #[allow(non_snake_case)]
         pub struct LateResources
         {
             pub EXTI : stm32f1xx_hal :: pac :: EXTI, pub adc1 : Adc < ADC1 >,
-            pub buttons :
-            (PB5 < Input < PullUp > >, PB6 < Input < PullUp > >), pub clocks :
-            stm32f1xx_hal :: rcc :: Clocks, pub display : GraphicsMode <
-            I2CInterface < BlockingI2c < I2C1,
+            pub button_brightness : PB6 < Input < PullUp > >, pub button_start
+            : PB5 < Input < PullUp > >, pub clocks : stm32f1xx_hal :: rcc ::
+            Clocks, pub display : GraphicsMode < I2CInterface < BlockingI2c <
+            I2C1,
             (PB8 < Alternate < OpenDrain > >, PB9 < Alternate < OpenDrain > >)
-            > >, DisplaySize128x64 >, pub pot : PA4 < Analog >, pub serial :
+            > >, DisplaySize128x64 >, pub pot : PA4 < Analog >, pub pot_pos :
+            u16, pub serial :
             (serial :: Tx < USART1 >, serial :: Rx < USART1 >)
         } #[doc = r" Monotonics used by the system"] #[allow(non_snake_case)]
         pub struct Monotonics() ; #[doc = r" Execution context"] pub struct
@@ -114,16 +135,524 @@
                 }
             }
         }
-    } #[doc = r" app module"] #[doc(hidden)] mod rtic_ext
+    } #[allow(non_snake_case)] #[doc = "Idle loop"] pub mod idle
+    {
+        #[allow(unused_imports)] use crate :: buttons :: * ;
+        #[allow(unused_imports)] use crate :: pot :: * ;
+        #[allow(unused_imports)] use stm32f1xx_hal ::
+        {
+            adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
+            {
+                gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
+                { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
+                { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
+                ExtiPin,
+            }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 }, i2c
+            :: { BlockingI2c, DutyCycle, Mode },
+        } ; #[allow(unused_imports)] use cortex_m :: asm :: delay ;
+        #[allow(unused_imports)] use ssd1306 ::
+        { prelude :: *, Builder, I2CDIBuilder, } ; #[allow(unused_imports)]
+        use embedded_graphics ::
+        {
+            fonts :: Text, pixelcolor :: BinaryColor, prelude :: *, style ::
+            TextStyle,
+        } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
+        #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
+        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
+        #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use stm32f1xx_hal :: gpio :: Analog ;
+        #[doc = r" Execution context"] pub struct Context < > { } impl < >
+        Context < >
+        {
+            #[inline(always)] pub unsafe fn
+            new(priority : & rtic :: export :: Priority) -> Self
+            { Context { } }
+        }
+    } mod resources
+    {
+        use rtic :: export :: Priority ; #[allow(non_camel_case_types)] pub
+        struct clocks < 'a > { priority : & 'a Priority, } impl < 'a > clocks
+        < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { clocks { priority } } #[inline(always)] pub unsafe fn
+            priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct button_start < 'a >
+        { priority : & 'a Priority, } impl < 'a > button_start < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { button_start { priority } } #[inline(always)] pub unsafe fn
+            priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct button_brightness < 'a >
+        { priority : & 'a Priority, } impl < 'a > button_brightness < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { button_brightness { priority } } #[inline(always)] pub
+            unsafe fn priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct EXTI < 'a >
+        { priority : & 'a Priority, } impl < 'a > EXTI < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { EXTI { priority } } #[inline(always)] pub unsafe fn
+            priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct display < 'a >
+        { priority : & 'a Priority, } impl < 'a > display < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { display { priority } } #[inline(always)] pub unsafe fn
+            priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct brightness_state < 'a >
+        { priority : & 'a Priority, } impl < 'a > brightness_state < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { brightness_state { priority } } #[inline(always)] pub
+            unsafe fn priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct pot < 'a >
+        { priority : & 'a Priority, } impl < 'a > pot < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { pot { priority } } #[inline(always)] pub unsafe fn
+            priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct pot_pos < 'a >
+        { priority : & 'a Priority, } impl < 'a > pot_pos < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { pot_pos { priority } } #[inline(always)] pub unsafe fn
+            priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct adc1 < 'a >
+        { priority : & 'a Priority, } impl < 'a > adc1 < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { adc1 { priority } } #[inline(always)] pub unsafe fn
+            priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct pot_dir < 'a >
+        { priority : & 'a Priority, } impl < 'a > pot_dir < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { pot_dir { priority } } #[inline(always)] pub unsafe fn
+            priority(& self) -> & Priority { self . priority }
+        }
+    } #[allow(non_snake_case)]
+    #[doc = "Resources `handle_buttons` has access to"] pub struct
+    __rtic_internal_handle_buttonsResources < 'a >
+    {
+        pub clocks : & 'a stm32f1xx_hal :: rcc :: Clocks, pub button_start :
+        resources :: button_start < 'a >, pub button_brightness : resources ::
+        button_brightness < 'a >, pub EXTI : resources :: EXTI < 'a >, pub
+        display : resources :: display < 'a >, pub brightness_state :
+        resources :: brightness_state < 'a >,
+    } #[allow(non_snake_case)] #[doc = "Hardware task"] pub mod handle_buttons
+    {
+        #[allow(unused_imports)] use crate :: buttons :: * ;
+        #[allow(unused_imports)] use crate :: pot :: * ;
+        #[allow(unused_imports)] use stm32f1xx_hal ::
+        {
+            adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
+            {
+                gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
+                { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
+                { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
+                ExtiPin,
+            }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 }, i2c
+            :: { BlockingI2c, DutyCycle, Mode },
+        } ; #[allow(unused_imports)] use cortex_m :: asm :: delay ;
+        #[allow(unused_imports)] use ssd1306 ::
+        { prelude :: *, Builder, I2CDIBuilder, } ; #[allow(unused_imports)]
+        use embedded_graphics ::
+        {
+            fonts :: Text, pixelcolor :: BinaryColor, prelude :: *, style ::
+            TextStyle,
+        } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
+        #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
+        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
+        #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use stm32f1xx_hal :: gpio :: Analog ;
+        #[doc(inline)] pub use super ::
+        __rtic_internal_handle_buttonsResources as Resources ;
+        #[doc = r" Execution context"] pub struct Context < 'a >
+        {
+            #[doc = r" Resources this task has access to"] pub resources :
+            Resources < 'a >,
+        } impl < 'a > Context < 'a >
+        {
+            #[inline(always)] pub unsafe fn
+            new(priority : & 'a rtic :: export :: Priority) -> Self
+            { Context { resources : Resources :: new(priority), } }
+        }
+    } #[allow(non_snake_case)] #[doc = "Resources `handle_adc` has access to"]
+    pub struct __rtic_internal_handle_adcResources < 'a >
+    {
+        pub pot : resources :: pot < 'a >, pub display : resources :: display
+        < 'a >, pub pot_pos : resources :: pot_pos < 'a >, pub adc1 :
+        resources :: adc1 < 'a >, pub pot_dir : resources :: pot_dir < 'a >,
+    } #[allow(non_snake_case)] #[doc = "Software task"] pub mod handle_adc
+    {
+        #[allow(unused_imports)] use crate :: buttons :: * ;
+        #[allow(unused_imports)] use crate :: pot :: * ;
+        #[allow(unused_imports)] use stm32f1xx_hal ::
+        {
+            adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
+            {
+                gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
+                { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
+                { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
+                ExtiPin,
+            }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 }, i2c
+            :: { BlockingI2c, DutyCycle, Mode },
+        } ; #[allow(unused_imports)] use cortex_m :: asm :: delay ;
+        #[allow(unused_imports)] use ssd1306 ::
+        { prelude :: *, Builder, I2CDIBuilder, } ; #[allow(unused_imports)]
+        use embedded_graphics ::
+        {
+            fonts :: Text, pixelcolor :: BinaryColor, prelude :: *, style ::
+            TextStyle,
+        } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
+        #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
+        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
+        #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use stm32f1xx_hal :: gpio :: Analog ;
+        #[doc(inline)] pub use super :: __rtic_internal_handle_adcResources as
+        Resources ; #[doc = r" Execution context"] pub struct Context < 'a >
+        {
+            #[doc = r" Resources this task has access to"] pub resources :
+            Resources < 'a >,
+        } impl < 'a > Context < 'a >
+        {
+            #[inline(always)] pub unsafe fn
+            new(priority : & 'a rtic :: export :: Priority) -> Self
+            { Context { resources : Resources :: new(priority), } }
+        } #[doc = r" Spawns the task directly"] pub fn spawn() -> Result < (),
+        () >
+        {
+            let input = () ; unsafe
+            {
+                if let Some(index) = rtic :: export :: interrupt ::
+                free(| _ | crate :: app :: __rtic_internal_handle_adc_FQ .
+                     dequeue())
+                {
+                    crate :: app :: __rtic_internal_handle_adc_INPUTS .
+                    get_unchecked_mut(usize :: from(index)) . as_mut_ptr() .
+                    write(input) ; rtic :: export :: interrupt ::
+                    free(| _ |
+                         {
+                             crate :: app :: __rtic_internal_P1_RQ .
+                             enqueue_unchecked((crate :: app :: P1_T ::
+                                                handle_adc, index)) ;
+                         }) ; rtic ::
+                    pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL1) ;
+                    Ok(())
+                } else { Err(input) }
+            }
+        }
+    } #[doc = r" app module"] #[allow(non_upper_case_globals)] #[doc(hidden)]
+    #[link_section = ".uninit.rtic0"] static mut __rtic_internal_clocks : core
+    :: mem :: MaybeUninit < stm32f1xx_hal :: rcc :: Clocks > = core :: mem ::
+    MaybeUninit :: uninit() ; impl < 'a > rtic :: Mutex for resources ::
+    clocks < 'a >
+    {
+        type T = stm32f1xx_hal :: rcc :: Clocks ; #[inline(always)] fn lock <
+        RTIC_INTERNAL_R >
+        (& mut self, f : impl FnOnce(& mut stm32f1xx_hal :: rcc :: Clocks) ->
+         RTIC_INTERNAL_R) -> RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(__rtic_internal_clocks . as_mut_ptr(), self . priority(),
+                     CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
+            }
+        }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)]
+    #[link_section = ".uninit.rtic1"] static mut __rtic_internal_button_start
+    : core :: mem :: MaybeUninit < PB5 < Input < PullUp > > > = core :: mem ::
+    MaybeUninit :: uninit() ; impl < 'a > rtic :: Mutex for resources ::
+    button_start < 'a >
+    {
+        type T = PB5 < Input < PullUp > > ; #[inline(always)] fn lock <
+        RTIC_INTERNAL_R >
+        (& mut self, f : impl FnOnce(& mut PB5 < Input < PullUp > >) ->
+         RTIC_INTERNAL_R) -> RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(__rtic_internal_button_start . as_mut_ptr(), self .
+                     priority(), CEILING, stm32f1xx_hal :: pac ::
+                     NVIC_PRIO_BITS, f,)
+            }
+        }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)]
+    #[link_section = ".uninit.rtic2"] static mut
+    __rtic_internal_button_brightness : core :: mem :: MaybeUninit < PB6 <
+    Input < PullUp > > > = core :: mem :: MaybeUninit :: uninit() ; impl < 'a
+    > rtic :: Mutex for resources :: button_brightness < 'a >
+    {
+        type T = PB6 < Input < PullUp > > ; #[inline(always)] fn lock <
+        RTIC_INTERNAL_R >
+        (& mut self, f : impl FnOnce(& mut PB6 < Input < PullUp > >) ->
+         RTIC_INTERNAL_R) -> RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(__rtic_internal_button_brightness . as_mut_ptr(), self .
+                     priority(), CEILING, stm32f1xx_hal :: pac ::
+                     NVIC_PRIO_BITS, f,)
+            }
+        }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)]
+    #[link_section = ".uninit.rtic3"] static mut __rtic_internal_EXTI : core
+    :: mem :: MaybeUninit < stm32f1xx_hal :: pac :: EXTI > = core :: mem ::
+    MaybeUninit :: uninit() ; impl < 'a > rtic :: Mutex for resources :: EXTI
+    < 'a >
+    {
+        type T = stm32f1xx_hal :: pac :: EXTI ; #[inline(always)] fn lock <
+        RTIC_INTERNAL_R >
+        (& mut self, f : impl FnOnce(& mut stm32f1xx_hal :: pac :: EXTI) ->
+         RTIC_INTERNAL_R) -> RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(__rtic_internal_EXTI . as_mut_ptr(), self . priority(),
+                     CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
+            }
+        }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)]
+    #[link_section = ".uninit.rtic4"] static mut __rtic_internal_display :
+    core :: mem :: MaybeUninit < GraphicsMode < I2CInterface < BlockingI2c <
+    I2C1, (PB8 < Alternate < OpenDrain > >, PB9 < Alternate < OpenDrain > >) >
+    >, DisplaySize128x64 > > = core :: mem :: MaybeUninit :: uninit() ; impl <
+    'a > rtic :: Mutex for resources :: display < 'a >
+    {
+        type T = GraphicsMode < I2CInterface < BlockingI2c < I2C1,
+        (PB8 < Alternate < OpenDrain > >, PB9 < Alternate < OpenDrain > >) >
+        >, DisplaySize128x64 > ; #[inline(always)] fn lock < RTIC_INTERNAL_R >
+        (& mut self, f : impl
+         FnOnce(& mut GraphicsMode < I2CInterface < BlockingI2c < I2C1,
+                (PB8 < Alternate < OpenDrain > >, PB9 < Alternate < OpenDrain
+                 > >) > >, DisplaySize128x64 >) -> RTIC_INTERNAL_R) ->
+        RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(__rtic_internal_display . as_mut_ptr(), self .
+                     priority(), CEILING, stm32f1xx_hal :: pac ::
+                     NVIC_PRIO_BITS, f,)
+            }
+        }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)] static mut
+    __rtic_internal_brightness_state : u8 = 0 ; impl < 'a > rtic :: Mutex for
+    resources :: brightness_state < 'a >
+    {
+        type T = u8 ; #[inline(always)] fn lock < RTIC_INTERNAL_R >
+        (& mut self, f : impl FnOnce(& mut u8) -> RTIC_INTERNAL_R) ->
+        RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(& mut __rtic_internal_brightness_state, self .
+                     priority(), CEILING, stm32f1xx_hal :: pac ::
+                     NVIC_PRIO_BITS, f,)
+            }
+        }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)]
+    #[link_section = ".uninit.rtic5"] static mut __rtic_internal_pot : core ::
+    mem :: MaybeUninit < PA4 < Analog > > = core :: mem :: MaybeUninit ::
+    uninit() ; impl < 'a > rtic :: Mutex for resources :: pot < 'a >
+    {
+        type T = PA4 < Analog > ; #[inline(always)] fn lock < RTIC_INTERNAL_R
+        >
+        (& mut self, f : impl FnOnce(& mut PA4 < Analog >) -> RTIC_INTERNAL_R)
+        -> RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(__rtic_internal_pot . as_mut_ptr(), self . priority(),
+                     CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
+            }
+        }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)]
+    #[link_section = ".uninit.rtic6"] static mut __rtic_internal_pot_pos :
+    core :: mem :: MaybeUninit < u16 > = core :: mem :: MaybeUninit ::
+    uninit() ; impl < 'a > rtic :: Mutex for resources :: pot_pos < 'a >
+    {
+        type T = u16 ; #[inline(always)] fn lock < RTIC_INTERNAL_R >
+        (& mut self, f : impl FnOnce(& mut u16) -> RTIC_INTERNAL_R) ->
+        RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(__rtic_internal_pot_pos . as_mut_ptr(), self .
+                     priority(), CEILING, stm32f1xx_hal :: pac ::
+                     NVIC_PRIO_BITS, f,)
+            }
+        }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)]
+    #[link_section = ".uninit.rtic7"] static mut __rtic_internal_adc1 : core
+    :: mem :: MaybeUninit < Adc < ADC1 > > = core :: mem :: MaybeUninit ::
+    uninit() ; impl < 'a > rtic :: Mutex for resources :: adc1 < 'a >
+    {
+        type T = Adc < ADC1 > ; #[inline(always)] fn lock < RTIC_INTERNAL_R >
+        (& mut self, f : impl FnOnce(& mut Adc < ADC1 >) -> RTIC_INTERNAL_R)
+        -> RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(__rtic_internal_adc1 . as_mut_ptr(), self . priority(),
+                     CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
+            }
+        }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)] static mut
+    __rtic_internal_pot_dir : bool = false ; impl < 'a > rtic :: Mutex for
+    resources :: pot_dir < 'a >
+    {
+        type T = bool ; #[inline(always)] fn lock < RTIC_INTERNAL_R >
+        (& mut self, f : impl FnOnce(& mut bool) -> RTIC_INTERNAL_R) ->
+        RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(& mut __rtic_internal_pot_dir, self . priority(),
+                     CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
+            }
+        }
+    } #[allow(non_snake_case)] #[no_mangle] unsafe fn EXTI9_5()
+    {
+        const PRIORITY : u8 = 1u8 ; rtic :: export ::
+        run(PRIORITY, ||
+            {
+                crate :: app ::
+                handle_buttons(handle_buttons :: Context ::
+                               new(& rtic :: export :: Priority ::
+                                   new(PRIORITY)))
+            }) ;
+    } impl < 'a > __rtic_internal_handle_buttonsResources < 'a >
+    {
+        #[inline(always)] pub unsafe fn
+        new(priority : & 'a rtic :: export :: Priority) -> Self
+        {
+            __rtic_internal_handle_buttonsResources
+            {
+                clocks : & * __rtic_internal_clocks . as_ptr(), button_start :
+                resources :: button_start :: new(priority), button_brightness
+                : resources :: button_brightness :: new(priority), EXTI :
+                resources :: EXTI :: new(priority), display : resources ::
+                display :: new(priority), brightness_state : resources ::
+                brightness_state :: new(priority),
+            }
+        }
+    } #[doc(hidden)] static mut __rtic_internal_handle_adc_FQ : rtic :: export
+    :: SCFQ < rtic :: export :: consts :: U1 > = rtic :: export ::
+    Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
+    #[link_section = ".uninit.rtic8"] #[doc(hidden)] static mut
+    __rtic_internal_handle_adc_INPUTS :
+    [core :: mem :: MaybeUninit < () > ; 1] =
+    [core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
+    __rtic_internal_handle_adcResources < 'a >
+    {
+        #[inline(always)] pub unsafe fn
+        new(priority : & 'a rtic :: export :: Priority) -> Self
+        {
+            __rtic_internal_handle_adcResources
+            {
+                pot : resources :: pot :: new(priority), display : resources
+                :: display :: new(priority), pot_pos : resources :: pot_pos ::
+                new(priority), adc1 : resources :: adc1 :: new(priority),
+                pot_dir : resources :: pot_dir :: new(priority),
+            }
+        }
+    } #[allow(non_camel_case_types)] #[derive(Clone, Copy)] #[doc(hidden)] pub
+    enum P1_T { handle_adc, } #[doc(hidden)] static mut __rtic_internal_P1_RQ
+    : rtic :: export :: SCRQ < P1_T, rtic :: export :: consts :: U1 > = rtic
+    :: export :: Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
+    #[allow(non_snake_case)]
+    #[doc = "Interrupt handler to dispatch tasks at priority 1"] #[no_mangle]
+    unsafe fn DMA1_CHANNEL1()
+    {
+        #[doc = r" The priority of this interrupt handler"] const PRIORITY :
+        u8 = 1u8 ; rtic :: export ::
+        run(PRIORITY, ||
+            {
+                while let Some((task, index)) = __rtic_internal_P1_RQ .
+                split() . 1 . dequeue()
+                {
+                    match task
+                    {
+                        P1_T :: handle_adc =>
+                        {
+                            let() = __rtic_internal_handle_adc_INPUTS .
+                            get_unchecked(usize :: from(index)) . as_ptr() .
+                            read() ; __rtic_internal_handle_adc_FQ . split() .
+                            0 . enqueue_unchecked(index) ; let priority = &
+                            rtic :: export :: Priority :: new(PRIORITY) ;
+                            crate :: app ::
+                            handle_adc(handle_adc :: Context :: new(priority))
+                        }
+                    }
+                }
+            }) ;
+    } #[doc(hidden)] mod rtic_ext
     {
         use super :: * ; #[no_mangle] unsafe extern "C" fn main() -> !
         {
-            rtic :: export :: interrupt :: disable() ; let mut core : rtic ::
-            export :: Peripherals = rtic :: export :: Peripherals :: steal() .
-            into() ; core . SCB . scr . modify(| r | r | 1 << 1) ;
-            let(late, mut monotonics) = crate :: app ::
-            init(init :: Context :: new(core . into())) ; rtic :: export ::
-            interrupt :: enable() ; loop { rtic :: export :: wfi() }
+            rtic :: export :: assert_send :: < GraphicsMode < I2CInterface <
+            BlockingI2c < I2C1,
+            (PB8 < Alternate < OpenDrain > >, PB9 < Alternate < OpenDrain > >)
+            > >, DisplaySize128x64 > > () ; rtic :: export :: assert_send :: <
+            PB5 < Input < PullUp > > > () ; rtic :: export :: assert_send :: <
+            PB6 < Input < PullUp > > > () ; rtic :: export :: assert_send :: <
+            stm32f1xx_hal :: pac :: EXTI > () ; rtic :: export :: assert_send
+            :: < stm32f1xx_hal :: rcc :: Clocks > () ; rtic :: export ::
+            assert_send :: < Adc < ADC1 > > () ; rtic :: export :: assert_send
+            :: < PA4 < Analog > > () ; rtic :: export :: assert_send :: < u16
+            > () ; rtic :: export :: interrupt :: disable() ; (0 .. 1u8) .
+            for_each(| i | __rtic_internal_handle_adc_FQ .
+                     enqueue_unchecked(i)) ; let mut core : rtic :: export ::
+            Peripherals = rtic :: export :: Peripherals :: steal() . into() ;
+            let _ =
+            [() ;
+             ((1 << stm32f1xx_hal :: pac :: NVIC_PRIO_BITS) - 1u8 as usize)] ;
+            core . NVIC .
+            set_priority(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
+                         :: interrupt :: DMA1_CHANNEL1, rtic :: export ::
+                         logical2hw(1u8, stm32f1xx_hal :: pac ::
+                                    NVIC_PRIO_BITS),) ; rtic :: export :: NVIC
+            ::
+            unmask(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
+                   :: interrupt :: DMA1_CHANNEL1) ; let _ =
+            [() ;
+             ((1 << stm32f1xx_hal :: pac :: NVIC_PRIO_BITS) - 1u8 as usize)] ;
+            core . NVIC .
+            set_priority(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
+                         :: interrupt :: EXTI9_5, rtic :: export ::
+                         logical2hw(1u8, stm32f1xx_hal :: pac ::
+                                    NVIC_PRIO_BITS),) ; rtic :: export :: NVIC
+            ::
+            unmask(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
+                   :: interrupt :: EXTI9_5) ; let(late, mut monotonics) =
+            crate :: app :: init(init :: Context :: new(core . into())) ;
+            __rtic_internal_EXTI . as_mut_ptr() . write(late . EXTI) ;
+            __rtic_internal_adc1 . as_mut_ptr() . write(late . adc1) ;
+            __rtic_internal_button_brightness . as_mut_ptr() .
+            write(late . button_brightness) ; __rtic_internal_button_start .
+            as_mut_ptr() . write(late . button_start) ; __rtic_internal_clocks
+            . as_mut_ptr() . write(late . clocks) ; __rtic_internal_display .
+            as_mut_ptr() . write(late . display) ; __rtic_internal_pot .
+            as_mut_ptr() . write(late . pot) ; __rtic_internal_pot_pos .
+            as_mut_ptr() . write(late . pot_pos) ; rtic :: export :: interrupt
+            :: enable() ; crate :: app ::
+            idle(idle :: Context ::
+                 new(& rtic :: export :: Priority :: new(0)))
         }
     }
 }

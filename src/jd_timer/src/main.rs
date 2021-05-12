@@ -3,14 +3,19 @@
 #![allow(unused_imports)]
 
 use panic_halt as _;
+mod buttons;
+mod pot;
 
 #[rtic::app(device = stm32f1xx_hal::pac,
 peripherals = true, dispatchers = [DMA1_CHANNEL1,DMA1_CHANNEL2,DMA1_CHANNEL3])]
 // RTIC application
 mod app {
 
+    use crate::buttons::*;
+    use crate::pot::*;
+
     use stm32f1xx_hal::{
-        adc::Adc,
+        adc::{Adc, SampleTime},
         prelude::*,
         serial,
         gpio::{
@@ -35,6 +40,13 @@ mod app {
         Builder,
         I2CDIBuilder,
     };
+    use embedded_graphics::{
+        fonts::Text,
+        pixelcolor::BinaryColor,
+        prelude::*,
+        style::TextStyle,
+    };
+    use profont::ProFont24Point;
 
     // Import peripheral control methods from general HAL definition
     use embedded_hal::digital::v2::{OutputPin, InputPin};
@@ -48,12 +60,18 @@ mod app {
     #[resources]
     struct Resources {
         display: GraphicsMode<I2CInterface<BlockingI2c<I2C1, (PB8<Alternate<OpenDrain>>,PB9<Alternate<OpenDrain>>) >>, DisplaySize128x64>,
-        buttons: (PB5<Input<PullUp>>, PB6<Input<PullUp>>),
+        button_start: PB5<Input<PullUp>>,
+        button_brightness: PB6<Input<PullUp>>,
         EXTI: stm32f1xx_hal::pac::EXTI,
         clocks: stm32f1xx_hal::rcc::Clocks,
         serial: (serial::Tx<USART1>, serial::Rx<USART1>),
         adc1: Adc<ADC1>,
-        pot: PA4<Analog>
+        pot: PA4<Analog>,
+        pot_pos: u16,
+        #[init(0)]
+        brightness_state: u8,
+        #[init(false)]
+        pot_dir: bool,
     }
 
     // Init function (duh)
@@ -107,9 +125,12 @@ mod app {
         // Init pot adc
         // ------------
         // Setup adc1 with default settings
-        let adc1 = Adc::adc1(cx.device.ADC1, &mut rcc.apb2, clocks);
+        let mut adc1 = Adc::adc1(cx.device.ADC1, &mut rcc.apb2, clocks);
+        adc1.set_sample_time(SampleTime::T_239);
         // Setup PA4 as analog input
-        let pot = gpioa.pa4.into_analog(&mut gpioa.crl);
+        let mut pot = gpioa.pa4.into_analog(&mut gpioa.crl);
+        let mut pot_pos = adc1.read(&mut pot).unwrap();
+        pot_pos = pot_pos >> 4;
 
         // -----------
         // Init serial
@@ -159,17 +180,41 @@ mod app {
         display.init().unwrap();
         display.clear();
 
+        // Show boot message
+        Text::new("Hello", Point::new(20,16))
+            .into_styled(TextStyle::new(ProFont24Point, BinaryColor::On))
+            .draw(&mut display)
+            .unwrap();
+
+        display.flush().unwrap();
+
         // Schedule the display to be updated with initial value
         //update_display(&mut display, "Hello");
 
         (init::LateResources {
             display,
-            buttons: (button_start, button_brightness),
+            button_start, button_brightness,
             EXTI: cx.device.EXTI,
             clocks,
             serial: (tx, rx),
             adc1,
             pot,
+            pot_pos,
         }, init::Monotonics())
+    }
+
+    #[idle]
+    fn idle(_cx: idle::Context) -> ! {
+        loop {
+            // Read off the ADC value
+            handle_adc::spawn().unwrap();
+        }
+    }
+
+    extern "Rust" {
+        #[task(binds = EXTI9_5, resources = [&clocks, button_start, button_brightness, EXTI, display, brightness_state], priority=1)]
+        fn handle_buttons(cx: handle_buttons::Context);
+        #[task(resources = [pot, display, pot_pos, adc1, pot_dir], priority=1)]
+        fn handle_adc(cx: handle_adc::Context);
     }
 }

@@ -2,7 +2,7 @@
 
 use crate::app;
 use crate::app::*;
-use crate::types::{ScreenPage};
+use crate::types::{SysState, ScreenPage};
 
 use rtic::Mutex;
 
@@ -37,6 +37,7 @@ pub fn handle_buttons(cx: app::handle_buttons::Context){
     let (mut EXTI, mut display) =
     (cx.resources.EXTI, cx.resources.display);
     let mut brightness_state = cx.resources.brightness_state;
+    let mut sys_state = cx.resources.sys_state;
     //let clocks = cx.resources.clocks;
 
     // Clear interrupt bits and disable interrupts
@@ -66,30 +67,38 @@ pub fn handle_buttons(cx: app::handle_buttons::Context){
 
     // Handle button presses
     if button_brightness_pressed == true || button_start_pressed == true {
-        display.lock(|display| {
-            if button_start_pressed == true{
-                display.clear();
-                Text::new("Start!", Point::new(20,16))
-                    .into_styled(TextStyle::new(ProFont24Point, BinaryColor::On))
-                    .draw(display)
-                    .unwrap();
-                display.flush().unwrap();
-                let _ = beep::spawn(100, 1);
-            } else if button_brightness_pressed == true {
-                let mut brightness:Brightness = Brightness::DIM;
-                brightness_state.lock(|brightness_state|{
-                    *brightness_state = (*brightness_state+1)%3;
-                    match brightness_state {
-                        0 => {brightness = Brightness::DIM},
-                        1 => {brightness = Brightness::NORMAL},
-                        _ => {brightness = Brightness::BRIGHTEST},
+
+        if button_start_pressed == true{
+            sys_state.lock(|sys_state|{
+                match sys_state {
+                    SysState::Setup => {
+                        let _ = to_state::spawn(SysState::Timer);
+                    }
+                    SysState::Timer => {
+                        let _ = to_state::spawn(SysState::Setup);
+                    }
+                    SysState::Sleep => {
+                        // The earlier dog-kicking code will have already handled this situation
+                    }
                 }
-                });
-                display.set_brightness(brightness).unwrap();
-                let _ = update_display::spawn(ScreenPage::Brightness);
-                let _ = beep::spawn(10, 5);
+            });
+            let _ = beep::spawn(100, 1);
+        } else if button_brightness_pressed == true {
+            let mut brightness:Brightness = Brightness::DIM;
+            brightness_state.lock(|brightness_state|{
+                *brightness_state = (*brightness_state+1)%3;
+                match brightness_state {
+                    0 => {brightness = Brightness::DIM},
+                    1 => {brightness = Brightness::NORMAL},
+                    _ => {brightness = Brightness::BRIGHTEST},
             }
-        });
+            });
+            display.lock(|display| {
+                display.set_brightness(brightness).unwrap();
+            });
+            let _ = update_display::spawn(ScreenPage::Brightness);
+            let _ = beep::spawn(10, 5);
+        }
     }
 
     // Enable interrupts

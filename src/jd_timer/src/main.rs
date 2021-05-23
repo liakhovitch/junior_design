@@ -126,7 +126,7 @@ mod app {
         let mut afio = cx.device.AFIO.constrain(&mut rcc.apb2);
         // Take ownership of backup domain
         let mut pwr = cx.device.PWR;
-        let mut bkp = cx.device.BKP;
+        let bkp = cx.device.BKP;
         let mut backup_domain = rcc.bkp.constrain(bkp, &mut rcc.apb1, &mut pwr);
 
         // Configure clocks and make clock object from clock register
@@ -173,41 +173,14 @@ mod app {
         let mut pot_pos = adc1.read(&mut pot).unwrap();
         pot_pos = pot_pos >> 4;
 
-        // ------------
-        // Init buzzer
-        // ------------
-        // For now, only using PWM on one pin
-        let buzz0 = gpioa.pa0.into_alternate_push_pull(&mut gpioa.crl);
-        let mut buzz1 = gpioa.pa1.into_push_pull_output(&mut gpioa.crl);
-        buzz1.set_high().unwrap();
-        let mut buzzer = Timer::tim2(cx.device.TIM2, &clocks, &mut rcc.apb1)
-            .pwm::<Tim2NoRemap, _, _, _>(buzz0, &mut afio.mapr, 500.hz()).split();
-        buzzer.set_duty(buzzer.get_max_duty() / 2);
-        let _ = beep::spawn(70, 2);
-
-        // Serial disabled because TX pin is being hacked into use for PSU control.
-        // Serial was only there for debug purposes anyway. We have SWD for debugging.
-        // -----------
-        // Init serial
-        // -----------
-        //let tx1_pin = gpioa.pa9.into_alternate_push_pull(&mut gpioa.crh);
-        // let rx1_pin = gpioa.pa10.into_floating_input(&mut gpioa.crh);
-        // let cfg = serial::Config::default().baudrate(115_200.bps());
-        // let usart1 = serial::Serial::usart1(
-        //     cx.device.USART1,
-        //     (tx1_pin, rx1_pin),
-        //     &mut afio.mapr,
-        //     cfg,
-        //     clocks,
-        //     &mut rcc.apb2,
-        // );
-        // let (tx, rx) = usart1.split();
+        // -----------------
+        // Init PMIC control
+        // -----------------
         let mut sleep_pin = gpioa.pa9.into_push_pull_output(&mut gpioa.crh);
         // Assert buck converter enable pin to stop PSU from shutting off.
         // TODO: implement auto-sleep to shut off after an idle period
         // Tell the PMIC to please not shut us off
         sleep_pin.set_high().unwrap();
-
         // --------
         // Init RTC
         // --------
@@ -219,6 +192,17 @@ mod app {
         rtc.unlisten_seconds();
         rtc.clear_alarm_flag();
         rtc.clear_second_flag();
+
+        // ------------
+        // Init buzzer
+        // ------------
+        // For now, only using PWM on one pin
+        let buzz0 = gpioa.pa0.into_alternate_push_pull(&mut gpioa.crl);
+        let mut buzz1 = gpioa.pa1.into_push_pull_output(&mut gpioa.crl);
+        buzz1.set_high().unwrap();
+        let mut buzzer = Timer::tim2(cx.device.TIM2, &clocks, &mut rcc.apb1)
+            .pwm::<Tim2NoRemap, _, _, _>(buzz0, &mut afio.mapr, 500.hz()).split();
+        buzzer.set_duty(buzzer.get_max_duty() / 2);
 
         // ----------------
         // Init I2C display
@@ -254,11 +238,10 @@ mod app {
 
         // Read initial ADC value
         let _ = handle_adc::spawn(true);
+        // Do startup beep
+        let _ = beep::spawn(70, 2);
         // Show boot message
         let _ = update_display::spawn(ScreenPage::Boot);
-
-        // Schedule the display to be updated with initial value
-        //update_display(&mut display, "Hello");
 
         // Return initialized resources to RTIC so they can be loaned to tasks
         (init::LateResources {
@@ -266,7 +249,6 @@ mod app {
             button_start, button_brightness,
             EXTI: cx.device.EXTI,
             clocks,
-            //serial: (tx, rx),
             adc1,
             pot,
             pot_pos,
@@ -289,7 +271,7 @@ mod app {
 
     // This is where we declare tasks which are in external files.
     extern "Rust" {
-        #[task(binds = EXTI9_5, resources = [&clocks, button_start, button_brightness, EXTI, display, brightness_state], priority=1)]
+        #[task(binds = EXTI9_5, resources = [&clocks, button_start, button_brightness, EXTI, display, brightness_state, sys_state], priority=1)]
         fn handle_buttons(cx: handle_buttons::Context);
         #[task(resources = [pot, pot_pos, adc1, pot_dir, max_time], priority=1)]
         fn handle_adc(cx: handle_adc::Context, silent:bool);
@@ -309,6 +291,5 @@ mod app {
         fn kick_dog(cx: kick_dog::Context);
         #[task(resources = [rtc, sys_state, sleep_pin, max_time, disp_call_cnt], priority=3, capacity=1)]
         fn to_state(cx: to_state::Context, target: SysState);
-
     }
 }

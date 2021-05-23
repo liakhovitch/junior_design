@@ -102,7 +102,7 @@
         mut rcc = cx . device . RCC . constrain() ; let mut flash = cx .
         device . FLASH . constrain() ; let mut afio = cx . device . AFIO .
         constrain(& mut rcc . apb2) ; let mut pwr = cx . device . PWR ; let
-        mut bkp = cx . device . BKP ; let mut backup_domain = rcc . bkp .
+        bkp = cx . device . BKP ; let mut backup_domain = rcc . bkp .
         constrain(bkp, & mut rcc . apb1, & mut pwr) ; let clocks = rcc . cfgr
         . freeze(& mut flash . acr) ; let mut gpioa = cx . device . GPIOA .
         split(& mut rcc . apb2) ; let mut gpiob = cx . device . GPIOB .
@@ -119,24 +119,23 @@
         adc1 = Adc :: adc1(cx . device . ADC1, & mut rcc . apb2, clocks) ;
         adc1 . set_sample_time(SampleTime :: T_239) ; let mut pot = gpioa .
         pa4 . into_analog(& mut gpioa . crl) ; let mut pot_pos = adc1 .
-        read(& mut pot) . unwrap() ; pot_pos = pot_pos >> 4 ; let buzz0 =
-        gpioa . pa0 . into_alternate_push_pull(& mut gpioa . crl) ; let mut
-        buzz1 = gpioa . pa1 . into_push_pull_output(& mut gpioa . crl) ; buzz1
-        . set_high() . unwrap() ; let mut buzzer = Timer ::
-        tim2(cx . device . TIM2, & clocks, & mut rcc . apb1) . pwm :: <
-        Tim2NoRemap, _, _, _ > (buzz0, & mut afio . mapr, 500 . hz()) .
-        split() ; buzzer . set_duty(buzzer . get_max_duty() / 2) ; let _ =
-        beep :: spawn(70, 2) ; let mut sleep_pin = gpioa . pa9 .
-        into_push_pull_output(& mut gpioa . crh) ; sleep_pin . set_high() .
-        unwrap() ; let mut rtc = Rtc ::
+        read(& mut pot) . unwrap() ; pot_pos = pot_pos >> 4 ; let mut
+        sleep_pin = gpioa . pa9 . into_push_pull_output(& mut gpioa . crh) ;
+        sleep_pin . set_high() . unwrap() ; let mut rtc = Rtc ::
         rtc(cx . device . RTC, & mut backup_domain) ; rtc .
         select_frequency(1 . hz()) ; rtc . set_time(0) ; rtc .
         set_alarm(SLEEP_TIME as u32) ; rtc . listen_alarm() ; rtc .
         unlisten_seconds() ; rtc . clear_alarm_flag() ; rtc .
-        clear_second_flag() ; let scl = gpiob . pb8 .
-        into_alternate_open_drain(& mut gpiob . crh) ; let sda = gpiob . pb9 .
-        into_alternate_open_drain(& mut gpiob . crh) ; let i2c = BlockingI2c
-        ::
+        clear_second_flag() ; let buzz0 = gpioa . pa0 .
+        into_alternate_push_pull(& mut gpioa . crl) ; let mut buzz1 = gpioa .
+        pa1 . into_push_pull_output(& mut gpioa . crl) ; buzz1 . set_high() .
+        unwrap() ; let mut buzzer = Timer ::
+        tim2(cx . device . TIM2, & clocks, & mut rcc . apb1) . pwm :: <
+        Tim2NoRemap, _, _, _ > (buzz0, & mut afio . mapr, 500 . hz()) .
+        split() ; buzzer . set_duty(buzzer . get_max_duty() / 2) ; let scl =
+        gpiob . pb8 . into_alternate_open_drain(& mut gpiob . crh) ; let sda =
+        gpiob . pb9 . into_alternate_open_drain(& mut gpiob . crh) ; let i2c =
+        BlockingI2c ::
         i2c1(cx . device . I2C1, (scl, sda), & mut afio . mapr, Mode :: Fast
              {
                  frequency : 400_000 . hz(), duty_cycle : DutyCycle ::
@@ -145,7 +144,8 @@
         interface = I2CDIBuilder :: new() . init(i2c) ; let mut display :
         GraphicsMode < _, _ > = Builder :: new() . connect(interface) . into()
         ; display . init() . unwrap() ; display . clear() ; let _ = handle_adc
-        :: spawn(true) ; let _ = update_display :: spawn(ScreenPage :: Boot) ;
+        :: spawn(true) ; let _ = beep :: spawn(70, 2) ; let _ = update_display
+        :: spawn(ScreenPage :: Boot) ;
         (init :: LateResources
          {
              display, button_start, button_brightness, EXTI : cx . device .
@@ -302,17 +302,17 @@
             #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
             Self { brightness_state { priority } } #[inline(always)] pub
             unsafe fn priority(& self) -> & Priority { self . priority }
-        } #[allow(non_camel_case_types)] pub struct rtc < 'a >
-        { priority : & 'a Priority, } impl < 'a > rtc < 'a >
-        {
-            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
-            Self { rtc { priority } } #[inline(always)] pub unsafe fn
-            priority(& self) -> & Priority { self . priority }
         } #[allow(non_camel_case_types)] pub struct sys_state < 'a >
         { priority : & 'a Priority, } impl < 'a > sys_state < 'a >
         {
             #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
             Self { sys_state { priority } } #[inline(always)] pub unsafe fn
+            priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct rtc < 'a >
+        { priority : & 'a Priority, } impl < 'a > rtc < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { rtc { priority } } #[inline(always)] pub unsafe fn
             priority(& self) -> & Priority { self . priority }
         } #[allow(non_camel_case_types)] pub struct max_time < 'a >
         { priority : & 'a Priority, } impl < 'a > max_time < 'a >
@@ -371,7 +371,8 @@
         resources :: button_start < 'a >, pub button_brightness : resources ::
         button_brightness < 'a >, pub EXTI : resources :: EXTI < 'a >, pub
         display : resources :: display < 'a >, pub brightness_state :
-        resources :: brightness_state < 'a >,
+        resources :: brightness_state < 'a >, pub sys_state : resources ::
+        sys_state < 'a >,
     } #[allow(non_snake_case)] #[doc = "Hardware task"] pub mod handle_buttons
     {
         #[allow(unused_imports)] use crate :: buttons :: * ;
@@ -2223,6 +2224,21 @@
                      NVIC_PRIO_BITS, f,)
             }
         }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)] static mut
+    __rtic_internal_sys_state : SysState = SysState :: Setup ; impl < 'a >
+    rtic :: Mutex for resources :: sys_state < 'a >
+    {
+        type T = SysState ; #[inline(always)] fn lock < RTIC_INTERNAL_R >
+        (& mut self, f : impl FnOnce(& mut SysState) -> RTIC_INTERNAL_R) ->
+        RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 3u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(& mut __rtic_internal_sys_state, self . priority(),
+                     CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
+            }
+        }
     } #[allow(non_upper_case_globals)] #[doc(hidden)]
     #[link_section = ".uninit.rtic5"] static mut __rtic_internal_rtc : core ::
     mem :: MaybeUninit < Rtc > = core :: mem :: MaybeUninit :: uninit() ; impl
@@ -2236,21 +2252,6 @@
             {
                 rtic :: export ::
                 lock(__rtic_internal_rtc . as_mut_ptr(), self . priority(),
-                     CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
-            }
-        }
-    } #[allow(non_upper_case_globals)] #[doc(hidden)] static mut
-    __rtic_internal_sys_state : SysState = SysState :: Setup ; impl < 'a >
-    rtic :: Mutex for resources :: sys_state < 'a >
-    {
-        type T = SysState ; #[inline(always)] fn lock < RTIC_INTERNAL_R >
-        (& mut self, f : impl FnOnce(& mut SysState) -> RTIC_INTERNAL_R) ->
-        RTIC_INTERNAL_R
-        {
-            #[doc = r" Priority ceiling"] const CEILING : u8 = 3u8 ; unsafe
-            {
-                rtic :: export ::
-                lock(& mut __rtic_internal_sys_state, self . priority(),
                      CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
             }
         }
@@ -2409,7 +2410,8 @@
                 : resources :: button_brightness :: new(priority), EXTI :
                 resources :: EXTI :: new(priority), display : resources ::
                 display :: new(priority), brightness_state : resources ::
-                brightness_state :: new(priority),
+                brightness_state :: new(priority), sys_state : resources ::
+                sys_state :: new(priority),
             }
         }
     } #[allow(non_snake_case)] #[no_mangle] unsafe fn RTC()

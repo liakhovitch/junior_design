@@ -2,6 +2,7 @@ use crate::app;
 use crate::app::*;
 use crate::types::{ScreenPage, SysState};
 use crate::config::{HARD_BOILED, SOFT_BOILED};
+use crate::logo::LOGO;
 
 use rtic::Mutex;
 
@@ -15,6 +16,7 @@ use embedded_graphics::{
     pixelcolor::BinaryColor,
     prelude::*,
     style::TextStyle,
+    image::{Image, ImageRaw},
 };
 use core::fmt::Write;
 use heapless::String;
@@ -105,7 +107,11 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
             },
             ScreenPage::Boot => {
                 display.clear();
-                Text::new("BOOT", Point::new(10,48))
+                let raw_image: ImageRaw<BinaryColor> = ImageRaw::new(LOGO, 128, 64);
+                Image::new(&raw_image, Point::zero())
+                    .draw(display)
+                    .unwrap();
+                Text::new("Egg Timer!", Point::new(20,44))
                     .into_styled(TextStyle::new(ProFont14Point, BinaryColor::On))
                     .draw(display)
                     .unwrap();
@@ -113,7 +119,7 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
                 display.flush().unwrap();
                 // Schedule the screen to go back to what it was previously showing
                 disp_call_cnt.lock(|disp_call_cnt|{*disp_call_cnt += 1});
-                let _ = reset_display::spawn_after(Seconds(2_u32));
+                let _ = reset_display::spawn_after(Seconds(3_u32));
             },
         }
     });

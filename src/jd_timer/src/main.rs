@@ -10,6 +10,7 @@ mod rtc;
 mod beep;
 mod types;
 mod config;
+mod logo;
 
 #[rtic::app(device = stm32f1xx_hal::pac,
 peripherals = true, dispatchers = [DMA1_CHANNEL1,DMA1_CHANNEL2,DMA1_CHANNEL3])]

@@ -73,10 +73,7 @@ pub fn handle_buttons(cx: app::handle_buttons::Context){
                 let mut brightness:Brightness = Brightness::DIM;
                 let mut disp_str: &'static str = "";
                 brightness_state.lock(|brightness_state|{
-                    *brightness_state +=1;
-                    if *brightness_state >= 3 {
-                        *brightness_state = 0;
-                    };
+                    *brightness_state = (*brightness_state+1)%3;
                     match brightness_state {
                         0 => {brightness = Brightness::DIM; disp_str = "Dim"},
                         1 => {brightness = Brightness::NORMAL; disp_str = "Med"},

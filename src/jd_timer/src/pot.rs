@@ -1,5 +1,7 @@
 use crate::app;
 use crate::app::*;
+use crate::types::ScreenPage;
+use crate::config::{MAX_TIME, TIME_STEPS};
 
 use rtic::Mutex;
 
@@ -33,20 +35,22 @@ use profont::ProFont14Point;
 
 use embedded_hal::digital::v2::InputPin;
 
-pub fn handle_adc(cx: app::handle_adc::Context){
+
+
+pub fn handle_adc(cx: app::handle_adc::Context, silent:bool){
     // Bring resources into scope
-    let (mut display, mut pot, mut adc1) =
-        (cx.resources.display, cx.resources.pot, cx.resources.adc1);
+    let (mut pot, mut adc1) =
+        (cx.resources.pot, cx.resources.adc1);
     let mut pot_pos = cx.resources.pot_pos;
     let mut pot_dir = cx.resources.pot_dir;
-    //let clocks = cx.resources.clocks;
+    let mut time_remaining = cx.resources.time_remaining;
 
     let mut pot_pos_new:u16 = 0;
     let mut sample_sum:u16 = 0;
     let mut middle_sum:u16 = 0;
     let mut outer_sum:u16 = 0;
 
-    // Read ADC
+    // Read ADC. This is a quick and dirty averaging algorithm, will improve if I have time.
     pot.lock(|pot| {
         adc1.lock(|adc1| {
             for _i in 0..4 {
@@ -66,26 +70,33 @@ pub fn handle_adc(cx: app::handle_adc::Context){
         })
     });
 
+    // Another awful algorithm to prevent jitter.
+    // If pot turn has changed direction, will not update pot_pos until pot has moved 2 positions.
     pot_pos.lock(|pot_pos| {
         pot_dir.lock(|pot_dir|{
+            // Just pretend this code doesn't exist, you will sleep more soundly.
             let mut pot_changed:bool = false;
             if (*pot_dir == true) && (pot_pos_new > *pot_pos || pot_pos_new < *pot_pos-1){
                 pot_changed = true;
             } else if (*pot_dir == false) && (pot_pos_new > *pot_pos+1 || pot_pos_new < *pot_pos){
                 pot_changed = true;
             }
-            if pot_changed == true {
+            // Handle a registered change in pot position
+            if pot_changed == true || silent == true {
+                if pot_pos_new > *pot_pos {*pot_dir = true}
+                else {*pot_dir = false}
+                // Update pot position
                 *pot_pos = pot_pos_new;
-                display.lock(|display| {
-                    display.clear();
-                    let mut data = String::<U16>::from("Pot:");
-                    let _=write!(data,"{}", *pot_pos);
-                    Text::new(&data[..], Point::new(20,16))
-                        .into_styled(TextStyle::new(ProFont14Point, BinaryColor::On))
-                        .draw(display)
-                        .unwrap();
-                    display.flush().unwrap();
+                // Update the time remaining on the clock
+                time_remaining.lock(|time_remaining|{
+                    // This awful formula maps the knob position to the time range and rounds to
+                    //   the nearest TIME_STEPS seconds
+                    *time_remaining = (((MAX_TIME/TIME_STEPS)*(255_u16-*pot_pos))/255)*TIME_STEPS;
                 });
+                // Update the display with the new time
+                if silent == false {
+                    let _ = update_display::spawn(ScreenPage::Setup);
+                }
             }
         })
     });

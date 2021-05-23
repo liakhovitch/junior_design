@@ -4,7 +4,6 @@ pub enum SysState {
 }
 
 pub enum ScreenPage {
-    Main,
     Setup,
     Timer,
     Brightness,

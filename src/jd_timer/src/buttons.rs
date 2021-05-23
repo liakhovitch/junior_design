@@ -2,6 +2,7 @@
 
 use crate::app;
 use crate::app::*;
+use crate::types::ScreenPage;
 
 use rtic::Mutex;
 
@@ -63,30 +64,26 @@ pub fn handle_buttons(cx: app::handle_buttons::Context){
     // Handle button presses
     if button_brightness_pressed == true || button_start_pressed == true {
         display.lock(|display| {
-            display.clear();
             if button_start_pressed == true{
+                display.clear();
                 Text::new("Start!", Point::new(20,16))
                     .into_styled(TextStyle::new(ProFont24Point, BinaryColor::On))
                     .draw(display)
                     .unwrap();
+                display.flush().unwrap();
             } else if button_brightness_pressed == true {
                 let mut brightness:Brightness = Brightness::DIM;
-                let mut disp_str: &'static str = "";
                 brightness_state.lock(|brightness_state|{
                     *brightness_state = (*brightness_state+1)%3;
                     match brightness_state {
-                        0 => {brightness = Brightness::DIM; disp_str = "Dim"},
-                        1 => {brightness = Brightness::NORMAL; disp_str = "Med"},
-                        _ => {brightness = Brightness::BRIGHTEST; disp_str = "Bright"},
-                    }
+                        0 => {brightness = Brightness::DIM},
+                        1 => {brightness = Brightness::NORMAL},
+                        _ => {brightness = Brightness::BRIGHTEST},
+                }
                 });
                 display.set_brightness(brightness).unwrap();
-                Text::new(disp_str, Point::new(20,16))
-                    .into_styled(TextStyle::new(ProFont24Point, BinaryColor::On))
-                    .draw(display)
-                    .unwrap();
+                let _ = update_display::spawn(ScreenPage::Brightness);
             }
-            display.flush().unwrap();
         });
     }
 

@@ -302,6 +302,12 @@
             #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
             Self { time_remaining { priority } } #[inline(always)] pub unsafe
             fn priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct disp_call_cnt < 'a >
+        { priority : & 'a Priority, } impl < 'a > disp_call_cnt < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { disp_call_cnt { priority } } #[inline(always)] pub unsafe
+            fn priority(& self) -> & Priority { self . priority }
         } #[allow(non_camel_case_types)] pub struct sys_state < 'a >
         { priority : & 'a Priority, } impl < 'a > sys_state < 'a >
         {
@@ -584,9 +590,10 @@
     #[doc = "Resources `update_display` has access to"] pub struct
     __rtic_internal_update_displayResources < 'a >
     {
-        pub display : resources :: display < 'a >, pub sys_state : resources
-        :: sys_state < 'a >, pub time_remaining : resources :: time_remaining
-        < 'a >, pub brightness_state : resources :: brightness_state < 'a >,
+        pub display : resources :: display < 'a >, pub time_remaining :
+        resources :: time_remaining < 'a >, pub brightness_state : resources
+        :: brightness_state < 'a >, pub disp_call_cnt : resources ::
+        disp_call_cnt < 'a >,
     } #[allow(non_snake_case)] #[doc = "Software task"] pub mod update_display
     {
         #[allow(unused_imports)] use crate :: buttons :: * ;
@@ -780,6 +787,226 @@
                                  {
                                      instant, index, task : crate :: app ::
                                      SCHED_T :: update_display, marker,
+                                 } ; __rtic_internal_TIMER_QUEUE_MARKER =
+                                 __rtic_internal_TIMER_QUEUE_MARKER .
+                                 wrapping_add(1) ; let tq = unsafe
+                                 {
+                                     & mut * crate :: app ::
+                                     __rtic_internal_TQ_MyMono . as_mut_ptr()
+                                 } ; tq .
+                                 enqueue_unchecked(nr, || core :: mem ::
+                                                   transmute :: < _, cortex_m
+                                                   :: peripheral :: SYST >
+                                                   (()) . enable_interrupt(),
+                                                   || cortex_m :: peripheral
+                                                   :: SCB :: set_pendst(),
+                                                   crate :: app ::
+                                                   __rtic_internal_MONOTONIC_STORAGE_MyMono
+                                                   . as_mut()) ;
+                                 Ok(SpawnHandle { marker })
+                             })
+                    } else { Err(input) }
+                }
+            }
+        }
+    } #[allow(non_snake_case)]
+    #[doc = "Resources `reset_display` has access to"] pub struct
+    __rtic_internal_reset_displayResources < 'a >
+    {
+        pub disp_call_cnt : resources :: disp_call_cnt < 'a >, pub sys_state :
+        resources :: sys_state < 'a >,
+    } #[allow(non_snake_case)] #[doc = "Software task"] pub mod reset_display
+    {
+        #[allow(unused_imports)] use crate :: buttons :: * ;
+        #[allow(unused_imports)] use crate :: pot :: * ;
+        #[allow(unused_imports)] use crate :: ui :: * ;
+        #[allow(unused_imports)] use crate :: types :: * ;
+        #[allow(unused_imports)] use stm32f1xx_hal ::
+        {
+            adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
+            {
+                gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
+                { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
+                { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
+                ExtiPin,
+            }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 }, i2c
+            :: { BlockingI2c, DutyCycle, Mode },
+        } ; #[allow(unused_imports)] use dwt_systick_monotonic :: DwtSystick ;
+        #[allow(unused_imports)] use cortex_m :: asm :: delay ;
+        #[allow(unused_imports)] use ssd1306 ::
+        { prelude :: *, Builder, I2CDIBuilder, } ; #[allow(unused_imports)]
+        use embedded_graphics ::
+        {
+            fonts :: Text, pixelcolor :: BinaryColor, prelude :: *, style ::
+            TextStyle,
+        } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
+        #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
+        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
+        #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use stm32f1xx_hal :: gpio :: Analog ;
+        #[doc(inline)] pub use super :: __rtic_internal_reset_displayResources
+        as Resources ; #[doc = r" Execution context"] pub struct Context < 'a
+        >
+        {
+            #[doc = r" Resources this task has access to"] pub resources :
+            Resources < 'a >,
+        } impl < 'a > Context < 'a >
+        {
+            #[inline(always)] pub unsafe fn
+            new(priority : & 'a rtic :: export :: Priority) -> Self
+            { Context { resources : Resources :: new(priority), } }
+        } #[doc = r" Spawns the task directly"] pub fn spawn() -> Result < (),
+        () >
+        {
+            let input = () ; unsafe
+            {
+                if let Some(index) = rtic :: export :: interrupt ::
+                free(| _ | crate :: app :: __rtic_internal_reset_display_FQ .
+                     dequeue())
+                {
+                    crate :: app :: __rtic_internal_reset_display_INPUTS .
+                    get_unchecked_mut(usize :: from(index)) . as_mut_ptr() .
+                    write(input) ; rtic :: export :: interrupt ::
+                    free(| _ |
+                         {
+                             crate :: app :: __rtic_internal_P1_RQ .
+                             enqueue_unchecked((crate :: app :: P1_T ::
+                                                reset_display, index)) ;
+                         }) ; rtic ::
+                    pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL1) ;
+                    Ok(())
+                } else { Err(input) }
+            }
+        } pub use MyMono :: spawn_after ; pub use MyMono :: spawn_at ; pub use
+        MyMono :: SpawnHandle ;
+        #[doc = r" Holds methods related to this monotonic"] pub mod MyMono
+        {
+            use super :: * ; #[allow(unused_imports)] use crate :: app ::
+            __rtic_internal_TIMER_QUEUE_MARKER ; #[allow(unused_imports)] use
+            crate :: app :: SCHED_T ; #[allow(unused_imports)] use crate ::
+            buttons :: * ; #[allow(unused_imports)] use crate :: pot :: * ;
+            #[allow(unused_imports)] use crate :: ui :: * ;
+            #[allow(unused_imports)] use crate :: types :: * ;
+            #[allow(unused_imports)] use stm32f1xx_hal ::
+            {
+                adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
+                {
+                    gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
+                    { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
+                    { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
+                    ExtiPin,
+                }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 },
+                i2c :: { BlockingI2c, DutyCycle, Mode },
+            } ; #[allow(unused_imports)] use dwt_systick_monotonic ::
+            DwtSystick ; #[allow(unused_imports)] use cortex_m :: asm :: delay
+            ; #[allow(unused_imports)] use ssd1306 ::
+            { prelude :: *, Builder, I2CDIBuilder, } ;
+            #[allow(unused_imports)] use embedded_graphics ::
+            {
+                fonts :: Text, pixelcolor :: BinaryColor, prelude :: *, style
+                :: TextStyle,
+            } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
+            #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
+            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr
+            :: write_volatile ; #[allow(unused_imports)] use core :: fmt ::
+            Write ; #[allow(unused_imports)] use core :: future :: Future ;
+            #[allow(unused_imports)] use stm32f1xx_hal :: gpio :: Analog ; pub
+            struct SpawnHandle { #[doc(hidden)] marker : u32, } impl
+            SpawnHandle
+            {
+                pub fn cancel(self) -> Result < (), () >
+                {
+                    rtic :: export :: interrupt ::
+                    free(| _ | unsafe
+                         {
+                             let tq = & mut * crate :: app ::
+                             __rtic_internal_TQ_MyMono . as_mut_ptr() ; if let
+                             Some((_task, index)) = tq .
+                             cancel_marker(self . marker)
+                             {
+                                 let msg = crate :: app ::
+                                 __rtic_internal_reset_display_INPUTS .
+                                 get_unchecked(usize :: from(index)) .
+                                 as_ptr() . read() ; crate :: app ::
+                                 __rtic_internal_reset_display_FQ . split() .
+                                 0 . enqueue_unchecked(index) ; Ok(msg)
+                             } else { Err(()) }
+                         })
+                } #[inline] pub fn reschedule_after < D > (self, duration : D)
+                -> Result < Self, () > where D : rtic :: time :: duration ::
+                Duration + rtic :: time :: fixed_point :: FixedPoint, D :: T :
+                Into << crate :: app :: MyMono as rtic :: time :: Clock > :: T
+                >,
+                {
+                    self .
+                    reschedule_at(crate :: app :: monotonics :: MyMono ::
+                                  now() + duration)
+                } pub fn
+                reschedule_at(self, instant : rtic :: time :: Instant < crate
+                              :: app :: MyMono >) -> Result < Self, () >
+                {
+                    rtic :: export :: interrupt ::
+                    free(| _ | unsafe
+                         {
+                             let marker = __rtic_internal_TIMER_QUEUE_MARKER ;
+                             __rtic_internal_TIMER_QUEUE_MARKER =
+                             __rtic_internal_TIMER_QUEUE_MARKER .
+                             wrapping_add(1) ; let tq = & mut * crate :: app
+                             :: __rtic_internal_TQ_MyMono . as_mut_ptr() ; tq
+                             .
+                             update_marker(self . marker, marker, instant, ||
+                                           cortex_m :: peripheral :: SCB ::
+                                           set_pendst()) .
+                             map(| _ | SpawnHandle { marker })
+                         })
+                }
+            }
+            #[doc =
+              r" Spawns the task after a set duration relative to the current time"]
+            #[doc = r""]
+            #[doc =
+              r" This will use the time `Instant::new(0)` as baseline if called in `#[init]`,"]
+            #[doc =
+              r" so if you use a non-resetable timer use `spawn_at` when in `#[init]`"]
+            pub fn spawn_after < D > (duration : D) -> Result < SpawnHandle,
+            () > where D : rtic :: time :: duration :: Duration + rtic :: time
+            :: fixed_point :: FixedPoint, D :: T : Into << crate :: app ::
+            MyMono as rtic :: time :: Clock > :: T >,
+            {
+                let instant = if rtic :: export :: interrupt ::
+                free(| _ | unsafe
+                     {
+                         crate :: app ::
+                         __rtic_internal_MONOTONIC_STORAGE_MyMono . is_none()
+                     }) { rtic :: time :: Instant :: new(0) } else
+                { crate :: app :: monotonics :: MyMono :: now() } ;
+                spawn_at(instant + duration)
+            } #[doc = r" Spawns the task at a fixed time instant"] pub fn
+            spawn_at(instant : rtic :: time :: Instant < crate :: app ::
+                     MyMono >) -> Result < SpawnHandle, () >
+            {
+                unsafe
+                {
+                    let input = () ; if let Some(index) = rtic :: export ::
+                    interrupt ::
+                    free(| _ | crate :: app ::
+                         __rtic_internal_reset_display_FQ . dequeue())
+                    {
+                        crate :: app :: __rtic_internal_reset_display_INPUTS .
+                        get_unchecked_mut(usize :: from(index)) . as_mut_ptr()
+                        . write(input) ; crate :: app ::
+                        __rtic_internal_reset_display_MyMono_INSTANTS .
+                        get_unchecked_mut(usize :: from(index)) . as_mut_ptr()
+                        . write(instant) ; rtic :: export :: interrupt ::
+                        free(| _ |
+                             {
+                                 let marker =
+                                 __rtic_internal_TIMER_QUEUE_MARKER ; let nr =
+                                 rtic :: export :: NotReady
+                                 {
+                                     instant, index, task : crate :: app ::
+                                     SCHED_T :: reset_display, marker,
                                  } ; __rtic_internal_TIMER_QUEUE_MARKER =
                                  __rtic_internal_TIMER_QUEUE_MARKER .
                                  wrapping_add(1) ; let tq = unsafe
@@ -997,6 +1224,21 @@
             }
         }
     } #[allow(non_upper_case_globals)] #[doc(hidden)] static mut
+    __rtic_internal_disp_call_cnt : u8 = 0 ; impl < 'a > rtic :: Mutex for
+    resources :: disp_call_cnt < 'a >
+    {
+        type T = u8 ; #[inline(always)] fn lock < RTIC_INTERNAL_R >
+        (& mut self, f : impl FnOnce(& mut u8) -> RTIC_INTERNAL_R) ->
+        RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(& mut __rtic_internal_disp_call_cnt, self . priority(),
+                     CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
+            }
+        }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)] static mut
     __rtic_internal_sys_state : SysState = SysState :: Setup ; impl < 'a >
     rtic :: Mutex for resources :: sys_state < 'a >
     {
@@ -1062,36 +1304,68 @@
             }
         }
     } #[doc(hidden)] static mut __rtic_internal_update_display_FQ : rtic ::
-    export :: SCFQ < rtic :: export :: consts :: U4 > = rtic :: export ::
+    export :: SCFQ < rtic :: export :: consts :: U2 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
     #[link_section = ".uninit.rtic10"] #[doc(hidden)] static mut
     __rtic_internal_update_display_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
-     8_000_000 > >> ; 3] =
+     8_000_000 > >> ; 2] =
     [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
-     uninit(), core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic11"] #[doc(hidden)] static mut
+     uninit(),] ; #[link_section = ".uninit.rtic11"] #[doc(hidden)] static mut
     __rtic_internal_update_display_INPUTS :
-    [core :: mem :: MaybeUninit < ScreenPage > ; 3] =
+    [core :: mem :: MaybeUninit < ScreenPage > ; 2] =
     [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
-     uninit(), core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
-    __rtic_internal_update_displayResources < 'a >
+     uninit(),] ; impl < 'a > __rtic_internal_update_displayResources < 'a >
     {
         #[inline(always)] pub unsafe fn
         new(priority : & 'a rtic :: export :: Priority) -> Self
         {
             __rtic_internal_update_displayResources
             {
-                display : resources :: display :: new(priority), sys_state :
-                resources :: sys_state :: new(priority), time_remaining :
-                resources :: time_remaining :: new(priority), brightness_state
-                : resources :: brightness_state :: new(priority),
+                display : resources :: display :: new(priority),
+                time_remaining : resources :: time_remaining :: new(priority),
+                brightness_state : resources :: brightness_state ::
+                new(priority), disp_call_cnt : resources :: disp_call_cnt ::
+                new(priority),
+            }
+        }
+    } #[doc(hidden)] static mut __rtic_internal_reset_display_FQ : rtic ::
+    export :: SCFQ < rtic :: export :: consts :: U16 > = rtic :: export ::
+    Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
+    #[link_section = ".uninit.rtic12"] #[doc(hidden)] static mut
+    __rtic_internal_reset_display_MyMono_INSTANTS :
+    [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
+     8_000_000 > >> ; 10] =
+    [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
+     uninit(), core :: mem :: MaybeUninit :: uninit(), core :: mem ::
+     MaybeUninit :: uninit(), core :: mem :: MaybeUninit :: uninit(), core ::
+     mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit :: uninit(),
+     core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
+     uninit(), core :: mem :: MaybeUninit :: uninit(),] ;
+    #[link_section = ".uninit.rtic13"] #[doc(hidden)] static mut
+    __rtic_internal_reset_display_INPUTS :
+    [core :: mem :: MaybeUninit < () > ; 10] =
+    [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
+     uninit(), core :: mem :: MaybeUninit :: uninit(), core :: mem ::
+     MaybeUninit :: uninit(), core :: mem :: MaybeUninit :: uninit(), core ::
+     mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit :: uninit(),
+     core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
+     uninit(), core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
+    __rtic_internal_reset_displayResources < 'a >
+    {
+        #[inline(always)] pub unsafe fn
+        new(priority : & 'a rtic :: export :: Priority) -> Self
+        {
+            __rtic_internal_reset_displayResources
+            {
+                disp_call_cnt : resources :: disp_call_cnt :: new(priority),
+                sys_state : resources :: sys_state :: new(priority),
             }
         }
     } #[allow(non_camel_case_types)] #[derive(Clone, Copy)] #[doc(hidden)] pub
-    enum P1_T { handle_adc, update_display, } #[doc(hidden)] static mut
-    __rtic_internal_P1_RQ : rtic :: export :: SCRQ < P1_T, rtic :: export ::
-    consts :: U4 > = rtic :: export ::
+    enum P1_T { handle_adc, reset_display, update_display, } #[doc(hidden)]
+    static mut __rtic_internal_P1_RQ : rtic :: export :: SCRQ < P1_T, rtic ::
+    export :: consts :: U16 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
     #[allow(non_snake_case)]
     #[doc = "Interrupt handler to dispatch tasks at priority 1"] #[no_mangle]
@@ -1116,6 +1390,16 @@
                             crate :: app ::
                             handle_adc(handle_adc :: Context :: new(priority),
                                        _0)
+                        } P1_T :: reset_display =>
+                        {
+                            let() = __rtic_internal_reset_display_INPUTS .
+                            get_unchecked(usize :: from(index)) . as_ptr() .
+                            read() ; __rtic_internal_reset_display_FQ .
+                            split() . 0 . enqueue_unchecked(index) ; let
+                            priority = & rtic :: export :: Priority ::
+                            new(PRIORITY) ; crate :: app ::
+                            reset_display(reset_display :: Context ::
+                                          new(priority))
                         } P1_T :: update_display =>
                         {
                             let _0 = __rtic_internal_update_display_INPUTS .
@@ -1133,10 +1417,10 @@
     } #[doc(hidden)] #[allow(non_camel_case_types)] static mut
     __rtic_internal_TIMER_QUEUE_MARKER : u32 = 0 ; #[doc(hidden)]
     #[allow(non_camel_case_types)] #[derive(Clone, Copy)] pub enum SCHED_T
-    { handle_adc, update_display, } #[doc(hidden)] static mut
+    { handle_adc, update_display, reset_display, } #[doc(hidden)] static mut
     __rtic_internal_TQ_MyMono : core :: mem :: MaybeUninit < rtic :: export ::
     TimerQueue < DwtSystick < 8_000_000 >, SCHED_T, rtic :: export :: consts
-    :: U4 >> = core :: mem :: MaybeUninit :: uninit() ; #[doc(hidden)] static
+    :: U13 >> = core :: mem :: MaybeUninit :: uninit() ; #[doc(hidden)] static
     mut __rtic_internal_MONOTONIC_STORAGE_MyMono : Option < DwtSystick <
     8_000_000 > > = None ; #[no_mangle] #[allow(non_snake_case)] unsafe fn
     SysTick()
@@ -1169,6 +1453,14 @@
                     rtic ::
                     pend(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
                          :: interrupt :: DMA1_CHANNEL1) ;
+                } SCHED_T :: reset_display =>
+                {
+                    rtic :: export :: interrupt ::
+                    free(| _ | __rtic_internal_P1_RQ . split() . 0 .
+                         enqueue_unchecked((P1_T :: reset_display, index))) ;
+                    rtic ::
+                    pend(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
+                         :: interrupt :: DMA1_CHANNEL1) ;
                 }
             }
         } rtic :: export :: interrupt ::
@@ -1194,8 +1486,10 @@
             assert_monotonic :: < DwtSystick < 8_000_000 > > () ; rtic ::
             export :: interrupt :: disable() ; (0 .. 1u8) .
             for_each(| i | __rtic_internal_handle_adc_FQ .
-                     enqueue_unchecked(i)) ; (0 .. 3u8) .
+                     enqueue_unchecked(i)) ; (0 .. 2u8) .
             for_each(| i | __rtic_internal_update_display_FQ .
+                     enqueue_unchecked(i)) ; (0 .. 10u8) .
+            for_each(| i | __rtic_internal_reset_display_FQ .
                      enqueue_unchecked(i)) ; let mut core : rtic :: export ::
             Peripherals = rtic :: export :: Peripherals :: steal() . into() ;
             let _ =

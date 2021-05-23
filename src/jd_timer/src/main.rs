@@ -91,6 +91,8 @@ mod app {
         sys_state: SysState,
         #[init(0)]
         time_remaining: u16,
+        #[init(0)]
+        disp_call_cnt: u8,
     }
 
     // Init function (duh)
@@ -246,7 +248,9 @@ mod app {
         fn handle_buttons(cx: handle_buttons::Context);
         #[task(resources = [pot, pot_pos, adc1, pot_dir, time_remaining], priority=1)]
         fn handle_adc(cx: handle_adc::Context, silent:bool);
-        #[task(resources = [display, sys_state, time_remaining, brightness_state], priority=1, capacity=3)]
+        #[task(resources = [display, time_remaining, brightness_state, disp_call_cnt], priority=1, capacity=2)]
         fn update_display(cx: update_display::Context, screen_type:ScreenPage);
+        #[task(resources = [disp_call_cnt, sys_state], priority=1, capacity=10)]
+        fn reset_display(cx: reset_display::Context);
     }
 }

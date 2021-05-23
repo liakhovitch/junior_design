@@ -97,6 +97,8 @@ pub fn handle_adc(cx: app::handle_adc::Context, silent:bool){
                 if silent == false {
                     let _ = update_display::spawn(ScreenPage::Setup);
                 }
+                // Kick the dog
+                let _ = kick_dog::spawn();
             }
         })
     });

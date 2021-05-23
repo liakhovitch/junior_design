@@ -293,7 +293,7 @@ mod app {
         fn handle_buttons(cx: handle_buttons::Context);
         #[task(resources = [pot, pot_pos, adc1, pot_dir, max_time], priority=1)]
         fn handle_adc(cx: handle_adc::Context, silent:bool);
-        #[task(resources = [display, max_time, brightness_state, disp_call_cnt], priority=1, capacity=2)]
+        #[task(resources = [display, max_time, brightness_state, disp_call_cnt, rtc], priority=1, capacity=2)]
         fn update_display(cx: update_display::Context, screen_type:ScreenPage);
         #[task(resources = [disp_call_cnt, sys_state], priority=1, capacity=10)]
         fn reset_display(cx: reset_display::Context);
@@ -301,11 +301,14 @@ mod app {
         fn beep(cx: beep::Context, length: u32, count: u8);
         #[task(resources = [buzzer], priority=1, capacity=1)]
         fn unbeep(cx: unbeep::Context, length: u32, count: u8);
-        #[task(binds = RTC, resources = [rtc, sys_state, max_time], priority=2)]
+        #[task(binds = RTC, resources = [rtc, sys_state, max_time, disp_call_cnt], priority=2)]
         fn tick(cx: tick::Context);
         #[task(binds = RTCALARM, resources = [rtc, sys_state, max_time], priority=2)]
         fn alarm(cx: alarm::Context);
-        #[task(resources = [rtc, sys_state, sleep_pin, max_time], priority=3, capacity=1)]
+        #[task(resources = [rtc, sys_state], priority=3, capacity=1)]
+        fn kick_dog(cx: kick_dog::Context);
+        #[task(resources = [rtc, sys_state, sleep_pin, max_time, disp_call_cnt], priority=3, capacity=1)]
         fn to_state(cx: to_state::Context, target: SysState);
+
     }
 }

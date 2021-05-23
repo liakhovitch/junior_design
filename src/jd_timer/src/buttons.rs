@@ -2,7 +2,7 @@
 
 use crate::app;
 use crate::app::*;
-use crate::types::ScreenPage;
+use crate::types::{ScreenPage};
 
 use rtic::Mutex;
 
@@ -50,6 +50,9 @@ pub fn handle_buttons(cx: app::handle_buttons::Context){
             })
         })
     });
+
+    // Kick the dog
+    let _ = kick_dog::spawn();
 
     // Check button state
     let mut button_start_pressed:bool = false;

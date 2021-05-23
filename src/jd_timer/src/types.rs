@@ -1,6 +1,7 @@
 pub enum SysState {
     Setup,
     Timer,
+    Sleep,
 }
 
 pub enum ScreenPage {
@@ -9,4 +10,6 @@ pub enum ScreenPage {
     Brightness,
     Alarm,
     Boot,
+    Sleep,
+    Charging,
 }

@@ -43,7 +43,7 @@ pub fn handle_adc(cx: app::handle_adc::Context, silent:bool){
         (cx.resources.pot, cx.resources.adc1);
     let mut pot_pos = cx.resources.pot_pos;
     let mut pot_dir = cx.resources.pot_dir;
-    let mut time_remaining = cx.resources.time_remaining;
+    let mut max_time = cx.resources.max_time;
 
     let mut pot_pos_new:u16 = 0;
     let mut sample_sum:u16 = 0;
@@ -88,10 +88,10 @@ pub fn handle_adc(cx: app::handle_adc::Context, silent:bool){
                 // Update pot position
                 *pot_pos = pot_pos_new;
                 // Update the time remaining on the clock
-                time_remaining.lock(|time_remaining|{
+                max_time.lock(|max_time|{
                     // This awful formula maps the knob position to the time range and rounds to
                     //   the nearest TIME_STEPS seconds
-                    *time_remaining = (((MAX_TIME/TIME_STEPS)*(255_u16-*pot_pos))/255)*TIME_STEPS;
+                    *max_time = (((MAX_TIME/TIME_STEPS)*(255_u16-*pot_pos))/255)*TIME_STEPS;
                 });
                 // Update the display with the new time
                 if silent == false {

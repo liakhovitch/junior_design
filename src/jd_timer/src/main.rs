@@ -11,6 +11,7 @@ mod beep;
 mod types;
 mod config;
 mod logo;
+mod states;
 
 #[rtic::app(device = stm32f1xx_hal::pac,
 peripherals = true, dispatchers = [DMA1_CHANNEL1,DMA1_CHANNEL2,DMA1_CHANNEL3])]
@@ -22,6 +23,10 @@ mod app {
     use crate::ui::*;
     use crate::types::*;
     use crate::beep::*;
+    use crate::rtc::*;
+    use crate::states::*;
+
+    use crate::config::{SLEEP_TIME};
 
     use stm32f1xx_hal::{
         adc::{Adc, SampleTime},
@@ -35,11 +40,13 @@ mod app {
             {Alternate, OpenDrain},
             Edge::*,
             ExtiPin,
+            Analog,
         },
         timer::{Event, Timer, Tim2NoRemap},
         pac::{I2C1, USART1, ADC1, TIM2},
         i2c::{BlockingI2c, DutyCycle, Mode},
-        pwm::C1
+        pwm::C1,
+        rtc::Rtc,
     };
 
     use dwt_systick_monotonic::DwtSystick;
@@ -66,7 +73,6 @@ mod app {
 
     use core::fmt::Write;
     use core::future::Future;
-    use stm32f1xx_hal::gpio::Analog;
 
     // Declare type for monotonic timer used by RTIC for task scheduling
     #[monotonic(binds = SysTick, default = true)]
@@ -86,13 +92,17 @@ mod app {
         adc1: Adc<ADC1>,
         pot: PA4<Analog>,
         pot_pos: u16,
+        sleep_pin: PA9<Output<PushPull>>,
         buzzer: stm32f1xx_hal::pwm::PwmChannel<TIM2, C1>,
+        rtc: Rtc,
         #[init(0)]
         brightness_state: u8,
         #[init(false)]
         pot_dir: bool,
         #[init(SysState::Setup)]
         sys_state: SysState,
+        #[init(0)]
+        max_time: u16,
         #[init(0)]
         time_remaining: u16,
         #[init(0)]
@@ -114,6 +124,10 @@ mod app {
         let mut flash = cx.device.FLASH.constrain();
         // Take ownership of AFIO register
         let mut afio = cx.device.AFIO.constrain(&mut rcc.apb2);
+        // Take ownership of backup domain
+        let mut pwr = cx.device.PWR;
+        let mut bkp = cx.device.BKP;
+        let mut backup_domain = rcc.bkp.constrain(bkp, &mut rcc.apb1, &mut pwr);
 
         // Configure clocks and make clock object from clock register
         let clocks = rcc
@@ -194,6 +208,18 @@ mod app {
         // Tell the PMIC to please not shut us off
         sleep_pin.set_high().unwrap();
 
+        // --------
+        // Init RTC
+        // --------
+        let mut rtc = Rtc::rtc(cx.device.RTC, &mut backup_domain);
+        rtc.select_frequency(1.hz());
+        rtc.set_time(0);
+        rtc.set_alarm(SLEEP_TIME as u32);
+        rtc.listen_alarm();
+        rtc.unlisten_seconds();
+        rtc.clear_alarm_flag();
+        rtc.clear_second_flag();
+
         // ----------------
         // Init I2C display
         // ----------------
@@ -244,7 +270,9 @@ mod app {
             adc1,
             pot,
             pot_pos,
+            sleep_pin,
             buzzer,
+            rtc,
         },
          // Return timer object so RTIC can use it for task scheduling.
          init::Monotonics(mono))
@@ -263,9 +291,9 @@ mod app {
     extern "Rust" {
         #[task(binds = EXTI9_5, resources = [&clocks, button_start, button_brightness, EXTI, display, brightness_state], priority=1)]
         fn handle_buttons(cx: handle_buttons::Context);
-        #[task(resources = [pot, pot_pos, adc1, pot_dir, time_remaining], priority=1)]
+        #[task(resources = [pot, pot_pos, adc1, pot_dir, max_time], priority=1)]
         fn handle_adc(cx: handle_adc::Context, silent:bool);
-        #[task(resources = [display, time_remaining, brightness_state, disp_call_cnt], priority=1, capacity=2)]
+        #[task(resources = [display, max_time, brightness_state, disp_call_cnt], priority=1, capacity=2)]
         fn update_display(cx: update_display::Context, screen_type:ScreenPage);
         #[task(resources = [disp_call_cnt, sys_state], priority=1, capacity=10)]
         fn reset_display(cx: reset_display::Context);
@@ -273,5 +301,11 @@ mod app {
         fn beep(cx: beep::Context, length: u32, count: u8);
         #[task(resources = [buzzer], priority=1, capacity=1)]
         fn unbeep(cx: unbeep::Context, length: u32, count: u8);
+        #[task(binds = RTC, resources = [rtc, sys_state, max_time], priority=2)]
+        fn tick(cx: tick::Context);
+        #[task(binds = RTCALARM, resources = [rtc, sys_state, max_time], priority=2)]
+        fn alarm(cx: alarm::Context);
+        #[task(resources = [rtc, sys_state, sleep_pin, max_time], priority=3, capacity=1)]
+        fn to_state(cx: to_state::Context, target: SysState);
     }
 }

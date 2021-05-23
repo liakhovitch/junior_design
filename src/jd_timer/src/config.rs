@@ -7,3 +7,5 @@ pub const TIME_STEPS: u16 = 15;
 pub const SOFT_BOILED: u16 = 240;
 // Time it takes to cook a hard-boiled egg
 pub const HARD_BOILED: u16 = 600;
+// Sleep timeout
+pub const SLEEP_TIME: u16 = 30;

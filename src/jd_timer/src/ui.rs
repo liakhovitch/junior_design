@@ -29,7 +29,7 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
     // Bring resources into scope
     let (mut display, mut brightness_state) =
         (cx.resources.display, cx.resources.brightness_state);
-    let mut time_remaining = cx.resources.time_remaining;
+    let mut max_time = cx.resources.max_time;
     let mut disp_call_cnt = cx.resources.disp_call_cnt;
 
     display.lock(|display| {
@@ -37,12 +37,12 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
             // Display the time set screen
             ScreenPage::Setup => {
                 disp_call_cnt.lock(|disp_call_cnt|{*disp_call_cnt = 0});
-                time_remaining.lock(|time_remaining| {
+                max_time.lock(|max_time| {
                     display.clear();
                     // Format the text
                     let mut data = String::<U16>::from("");
-                    let minutes = *time_remaining/60;
-                    let seconds = *time_remaining%60;
+                    let minutes = *max_time/60;
+                    let seconds = *max_time%60;
                     let _ = write!(data, "{:>2}:{:>02}", minutes, seconds);
 
                     // Create the graphics object and draw it on the "buffer"
@@ -52,7 +52,7 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
                         .unwrap();
 
                     // Determine special status message for special time settings
-                    let status_msg: &str = match *time_remaining {
+                    let status_msg: &str = match *max_time {
                         SOFT_BOILED => "Soft-Boiled",
                         HARD_BOILED => "Hard-Boiled",
                         _ => "",
@@ -121,6 +121,32 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
                 disp_call_cnt.lock(|disp_call_cnt|{*disp_call_cnt += 1});
                 let _ = reset_display::spawn_after(Seconds(3_u32));
             },
+            ScreenPage::Sleep => {
+                display.clear();
+                let raw_image: ImageRaw<BinaryColor> = ImageRaw::new(LOGO, 128, 64);
+                Image::new(&raw_image, Point::zero())
+                    .draw(display)
+                    .unwrap();
+                Text::new("Shutting Down", Point::new(20,44))
+                    .into_styled(TextStyle::new(ProFont14Point, BinaryColor::On))
+                    .draw(display)
+                    .unwrap();
+                // Write buffer to display
+                display.flush().unwrap();
+            },
+            ScreenPage::Charging => {
+                display.clear();
+                let raw_image: ImageRaw<BinaryColor> = ImageRaw::new(LOGO, 128, 64);
+                Image::new(&raw_image, Point::zero())
+                    .draw(display)
+                    .unwrap();
+                Text::new("Charging...", Point::new(20,44))
+                    .into_styled(TextStyle::new(ProFont14Point, BinaryColor::On))
+                    .draw(display)
+                    .unwrap();
+                // Write buffer to display
+                display.flush().unwrap();
+            },
         }
     });
 }
@@ -129,14 +155,13 @@ pub fn reset_display(cx: reset_display::Context) {
     let mut disp_call_cnt = cx.resources.disp_call_cnt;
     let mut sys_state = cx.resources.sys_state;
     disp_call_cnt.lock(|disp_call_cnt|{
-       if *disp_call_cnt == 0 {
-           return;
-       } else if *disp_call_cnt == 1 {
+        if *disp_call_cnt <= 1 {
            *disp_call_cnt = 0;
            sys_state.lock(|sys_state|{
                match *sys_state {
                    SysState::Setup => { let _ = update_display::spawn(ScreenPage::Setup); },
                    SysState::Timer => { let _ = update_display::spawn(ScreenPage::Timer); },
+                   SysState::Sleep => { let _ = update_display::spawn(ScreenPage::Sleep); },
                }
            });
        } else {

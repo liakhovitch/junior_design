@@ -71,6 +71,7 @@ pub fn handle_buttons(cx: app::handle_buttons::Context){
                     .draw(display)
                     .unwrap();
                 display.flush().unwrap();
+                let _ = beep::spawn(100, 1);
             } else if button_brightness_pressed == true {
                 let mut brightness:Brightness = Brightness::DIM;
                 brightness_state.lock(|brightness_state|{
@@ -83,6 +84,7 @@ pub fn handle_buttons(cx: app::handle_buttons::Context){
                 });
                 display.set_brightness(brightness).unwrap();
                 let _ = update_display::spawn(ScreenPage::Brightness);
+                let _ = beep::spawn(10, 5);
             }
         });
     }

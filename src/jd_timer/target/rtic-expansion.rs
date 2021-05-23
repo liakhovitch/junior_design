@@ -15,6 +15,7 @@
             #[allow(unused_imports)] use crate :: pot :: * ;
             #[allow(unused_imports)] use crate :: ui :: * ;
             #[allow(unused_imports)] use crate :: types :: * ;
+            #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
             {
                 adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
@@ -23,8 +24,9 @@
                     { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
                     { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
                     ExtiPin,
-                }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 },
-                i2c :: { BlockingI2c, DutyCycle, Mode },
+                }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+                { I2C1, USART1, ADC1, TIM2 }, i2c ::
+                { BlockingI2c, DutyCycle, Mode }, pwm :: C1
             } ; #[allow(unused_imports)] use dwt_systick_monotonic ::
             DwtSystick ; #[allow(unused_imports)] use cortex_m :: asm :: delay
             ; #[allow(unused_imports)] use ssd1306 ::
@@ -68,15 +70,16 @@
             }
         }
     } use crate :: buttons :: * ; use crate :: pot :: * ; use crate :: ui :: *
-    ; use crate :: types :: * ; use stm32f1xx_hal ::
+    ; use crate :: types :: * ; use crate :: beep :: * ; use stm32f1xx_hal ::
     {
         adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
         {
             gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
             { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
             { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *, ExtiPin,
-        }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 }, i2c ::
-        { BlockingI2c, DutyCycle, Mode },
+        }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+        { I2C1, USART1, ADC1, TIM2 }, i2c :: { BlockingI2c, DutyCycle, Mode },
+        pwm :: C1
     } ; use dwt_systick_monotonic :: DwtSystick ; use cortex_m :: asm :: delay
     ; use ssd1306 :: { prelude :: *, Builder, I2CDIBuilder, } ; use
     embedded_graphics ::
@@ -110,9 +113,16 @@
         adc1 = Adc :: adc1(cx . device . ADC1, & mut rcc . apb2, clocks) ;
         adc1 . set_sample_time(SampleTime :: T_239) ; let mut pot = gpioa .
         pa4 . into_analog(& mut gpioa . crl) ; let mut pot_pos = adc1 .
-        read(& mut pot) . unwrap() ; pot_pos = pot_pos >> 4 ; let mut
-        sleep_pin = gpioa . pa9 . into_push_pull_output(& mut gpioa . crh) ;
-        sleep_pin . set_high() . unwrap() ; let scl = gpiob . pb8 .
+        read(& mut pot) . unwrap() ; pot_pos = pot_pos >> 4 ; let buzz0 =
+        gpioa . pa0 . into_alternate_push_pull(& mut gpioa . crl) ; let mut
+        buzz1 = gpioa . pa1 . into_push_pull_output(& mut gpioa . crl) ; buzz1
+        . set_high() . unwrap() ; let mut buzzer = Timer ::
+        tim2(cx . device . TIM2, & clocks, & mut rcc . apb1) . pwm :: <
+        Tim2NoRemap, _, _, _ > (buzz0, & mut afio . mapr, 500 . hz()) .
+        split() ; buzzer . set_duty(buzzer . get_max_duty() / 2) ; let _ =
+        beep :: spawn(70, 2) ; let mut sleep_pin = gpioa . pa9 .
+        into_push_pull_output(& mut gpioa . crh) ; sleep_pin . set_high() .
+        unwrap() ; let scl = gpiob . pb8 .
         into_alternate_open_drain(& mut gpiob . crh) ; let sda = gpiob . pb9 .
         into_alternate_open_drain(& mut gpiob . crh) ; let i2c = BlockingI2c
         ::
@@ -128,7 +138,7 @@
         (init :: LateResources
          {
              display, button_start, button_brightness, EXTI : cx . device .
-             EXTI, clocks, adc1, pot, pot_pos,
+             EXTI, clocks, adc1, pot, pot_pos, buzzer,
          }, init :: Monotonics(mono))
     } #[allow(non_snake_case)] fn idle(_cx : idle :: Context) -> !
     {
@@ -140,6 +150,7 @@
         #[allow(unused_imports)] use crate :: pot :: * ;
         #[allow(unused_imports)] use crate :: ui :: * ;
         #[allow(unused_imports)] use crate :: types :: * ;
+        #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
             adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
@@ -148,8 +159,9 @@
                 { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
                 { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
                 ExtiPin,
-            }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 }, i2c
-            :: { BlockingI2c, DutyCycle, Mode },
+            }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+            { I2C1, USART1, ADC1, TIM2 }, i2c ::
+            { BlockingI2c, DutyCycle, Mode }, pwm :: C1
         } ; #[allow(unused_imports)] use dwt_systick_monotonic :: DwtSystick ;
         #[allow(unused_imports)] use cortex_m :: asm :: delay ;
         #[allow(unused_imports)] use ssd1306 ::
@@ -169,7 +181,8 @@
         {
             pub EXTI : stm32f1xx_hal :: pac :: EXTI, pub adc1 : Adc < ADC1 >,
             pub button_brightness : PB6 < Input < PullUp > >, pub button_start
-            : PB5 < Input < PullUp > >, pub clocks : stm32f1xx_hal :: rcc ::
+            : PB5 < Input < PullUp > >, pub buzzer : stm32f1xx_hal :: pwm ::
+            PwmChannel < TIM2, C1 >, pub clocks : stm32f1xx_hal :: rcc ::
             Clocks, pub display : GraphicsMode < I2CInterface < BlockingI2c <
             I2C1,
             (PB8 < Alternate < OpenDrain > >, PB9 < Alternate < OpenDrain > >)
@@ -202,6 +215,7 @@
         #[allow(unused_imports)] use crate :: pot :: * ;
         #[allow(unused_imports)] use crate :: ui :: * ;
         #[allow(unused_imports)] use crate :: types :: * ;
+        #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
             adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
@@ -210,8 +224,9 @@
                 { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
                 { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
                 ExtiPin,
-            }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 }, i2c
-            :: { BlockingI2c, DutyCycle, Mode },
+            }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+            { I2C1, USART1, ADC1, TIM2 }, i2c ::
+            { BlockingI2c, DutyCycle, Mode }, pwm :: C1
         } ; #[allow(unused_imports)] use dwt_systick_monotonic :: DwtSystick ;
         #[allow(unused_imports)] use cortex_m :: asm :: delay ;
         #[allow(unused_imports)] use ssd1306 ::
@@ -314,6 +329,12 @@
             #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
             Self { sys_state { priority } } #[inline(always)] pub unsafe fn
             priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct buzzer < 'a >
+        { priority : & 'a Priority, } impl < 'a > buzzer < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { buzzer { priority } } #[inline(always)] pub unsafe fn
+            priority(& self) -> & Priority { self . priority }
         }
     } #[allow(non_snake_case)]
     #[doc = "Resources `handle_buttons` has access to"] pub struct
@@ -330,6 +351,7 @@
         #[allow(unused_imports)] use crate :: pot :: * ;
         #[allow(unused_imports)] use crate :: ui :: * ;
         #[allow(unused_imports)] use crate :: types :: * ;
+        #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
             adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
@@ -338,8 +360,9 @@
                 { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
                 { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
                 ExtiPin,
-            }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 }, i2c
-            :: { BlockingI2c, DutyCycle, Mode },
+            }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+            { I2C1, USART1, ADC1, TIM2 }, i2c ::
+            { BlockingI2c, DutyCycle, Mode }, pwm :: C1
         } ; #[allow(unused_imports)] use dwt_systick_monotonic :: DwtSystick ;
         #[allow(unused_imports)] use cortex_m :: asm :: delay ;
         #[allow(unused_imports)] use ssd1306 ::
@@ -379,6 +402,7 @@
         #[allow(unused_imports)] use crate :: pot :: * ;
         #[allow(unused_imports)] use crate :: ui :: * ;
         #[allow(unused_imports)] use crate :: types :: * ;
+        #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
             adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
@@ -387,8 +411,9 @@
                 { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
                 { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
                 ExtiPin,
-            }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 }, i2c
-            :: { BlockingI2c, DutyCycle, Mode },
+            }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+            { I2C1, USART1, ADC1, TIM2 }, i2c ::
+            { BlockingI2c, DutyCycle, Mode }, pwm :: C1
         } ; #[allow(unused_imports)] use dwt_systick_monotonic :: DwtSystick ;
         #[allow(unused_imports)] use cortex_m :: asm :: delay ;
         #[allow(unused_imports)] use ssd1306 ::
@@ -445,6 +470,7 @@
             buttons :: * ; #[allow(unused_imports)] use crate :: pot :: * ;
             #[allow(unused_imports)] use crate :: ui :: * ;
             #[allow(unused_imports)] use crate :: types :: * ;
+            #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
             {
                 adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
@@ -453,8 +479,9 @@
                     { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
                     { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
                     ExtiPin,
-                }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 },
-                i2c :: { BlockingI2c, DutyCycle, Mode },
+                }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+                { I2C1, USART1, ADC1, TIM2 }, i2c ::
+                { BlockingI2c, DutyCycle, Mode }, pwm :: C1
             } ; #[allow(unused_imports)] use dwt_systick_monotonic ::
             DwtSystick ; #[allow(unused_imports)] use cortex_m :: asm :: delay
             ; #[allow(unused_imports)] use ssd1306 ::
@@ -600,6 +627,7 @@
         #[allow(unused_imports)] use crate :: pot :: * ;
         #[allow(unused_imports)] use crate :: ui :: * ;
         #[allow(unused_imports)] use crate :: types :: * ;
+        #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
             adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
@@ -608,8 +636,9 @@
                 { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
                 { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
                 ExtiPin,
-            }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 }, i2c
-            :: { BlockingI2c, DutyCycle, Mode },
+            }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+            { I2C1, USART1, ADC1, TIM2 }, i2c ::
+            { BlockingI2c, DutyCycle, Mode }, pwm :: C1
         } ; #[allow(unused_imports)] use dwt_systick_monotonic :: DwtSystick ;
         #[allow(unused_imports)] use cortex_m :: asm :: delay ;
         #[allow(unused_imports)] use ssd1306 ::
@@ -667,6 +696,7 @@
             buttons :: * ; #[allow(unused_imports)] use crate :: pot :: * ;
             #[allow(unused_imports)] use crate :: ui :: * ;
             #[allow(unused_imports)] use crate :: types :: * ;
+            #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
             {
                 adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
@@ -675,8 +705,9 @@
                     { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
                     { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
                     ExtiPin,
-                }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 },
-                i2c :: { BlockingI2c, DutyCycle, Mode },
+                }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+                { I2C1, USART1, ADC1, TIM2 }, i2c ::
+                { BlockingI2c, DutyCycle, Mode }, pwm :: C1
             } ; #[allow(unused_imports)] use dwt_systick_monotonic ::
             DwtSystick ; #[allow(unused_imports)] use cortex_m :: asm :: delay
             ; #[allow(unused_imports)] use ssd1306 ::
@@ -821,6 +852,7 @@
         #[allow(unused_imports)] use crate :: pot :: * ;
         #[allow(unused_imports)] use crate :: ui :: * ;
         #[allow(unused_imports)] use crate :: types :: * ;
+        #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
             adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
@@ -829,8 +861,9 @@
                 { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
                 { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
                 ExtiPin,
-            }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 }, i2c
-            :: { BlockingI2c, DutyCycle, Mode },
+            }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+            { I2C1, USART1, ADC1, TIM2 }, i2c ::
+            { BlockingI2c, DutyCycle, Mode }, pwm :: C1
         } ; #[allow(unused_imports)] use dwt_systick_monotonic :: DwtSystick ;
         #[allow(unused_imports)] use cortex_m :: asm :: delay ;
         #[allow(unused_imports)] use ssd1306 ::
@@ -888,6 +921,7 @@
             buttons :: * ; #[allow(unused_imports)] use crate :: pot :: * ;
             #[allow(unused_imports)] use crate :: ui :: * ;
             #[allow(unused_imports)] use crate :: types :: * ;
+            #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
             {
                 adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
@@ -896,8 +930,9 @@
                     { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
                     { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
                     ExtiPin,
-                }, timer :: { Event, Timer }, pac :: { I2C1, USART1, ADC1 },
-                i2c :: { BlockingI2c, DutyCycle, Mode },
+                }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+                { I2C1, USART1, ADC1, TIM2 }, i2c ::
+                { BlockingI2c, DutyCycle, Mode }, pwm :: C1
             } ; #[allow(unused_imports)] use dwt_systick_monotonic ::
             DwtSystick ; #[allow(unused_imports)] use cortex_m :: asm :: delay
             ; #[allow(unused_imports)] use ssd1306 ::
@@ -1007,6 +1042,450 @@
                                  {
                                      instant, index, task : crate :: app ::
                                      SCHED_T :: reset_display, marker,
+                                 } ; __rtic_internal_TIMER_QUEUE_MARKER =
+                                 __rtic_internal_TIMER_QUEUE_MARKER .
+                                 wrapping_add(1) ; let tq = unsafe
+                                 {
+                                     & mut * crate :: app ::
+                                     __rtic_internal_TQ_MyMono . as_mut_ptr()
+                                 } ; tq .
+                                 enqueue_unchecked(nr, || core :: mem ::
+                                                   transmute :: < _, cortex_m
+                                                   :: peripheral :: SYST >
+                                                   (()) . enable_interrupt(),
+                                                   || cortex_m :: peripheral
+                                                   :: SCB :: set_pendst(),
+                                                   crate :: app ::
+                                                   __rtic_internal_MONOTONIC_STORAGE_MyMono
+                                                   . as_mut()) ;
+                                 Ok(SpawnHandle { marker })
+                             })
+                    } else { Err(input) }
+                }
+            }
+        }
+    } #[allow(non_snake_case)] #[doc = "Resources `beep` has access to"] pub
+    struct __rtic_internal_beepResources < 'a >
+    { pub buzzer : resources :: buzzer < 'a >, } #[allow(non_snake_case)]
+    #[doc = "Software task"] pub mod beep
+    {
+        #[allow(unused_imports)] use crate :: buttons :: * ;
+        #[allow(unused_imports)] use crate :: pot :: * ;
+        #[allow(unused_imports)] use crate :: ui :: * ;
+        #[allow(unused_imports)] use crate :: types :: * ;
+        #[allow(unused_imports)] use crate :: beep :: * ;
+        #[allow(unused_imports)] use stm32f1xx_hal ::
+        {
+            adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
+            {
+                gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
+                { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
+                { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
+                ExtiPin,
+            }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+            { I2C1, USART1, ADC1, TIM2 }, i2c ::
+            { BlockingI2c, DutyCycle, Mode }, pwm :: C1
+        } ; #[allow(unused_imports)] use dwt_systick_monotonic :: DwtSystick ;
+        #[allow(unused_imports)] use cortex_m :: asm :: delay ;
+        #[allow(unused_imports)] use ssd1306 ::
+        { prelude :: *, Builder, I2CDIBuilder, } ; #[allow(unused_imports)]
+        use embedded_graphics ::
+        {
+            fonts :: Text, pixelcolor :: BinaryColor, prelude :: *, style ::
+            TextStyle,
+        } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
+        #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
+        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
+        #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use stm32f1xx_hal :: gpio :: Analog ;
+        #[doc(inline)] pub use super :: __rtic_internal_beepResources as
+        Resources ; #[doc = r" Execution context"] pub struct Context < 'a >
+        {
+            #[doc = r" Resources this task has access to"] pub resources :
+            Resources < 'a >,
+        } impl < 'a > Context < 'a >
+        {
+            #[inline(always)] pub unsafe fn
+            new(priority : & 'a rtic :: export :: Priority) -> Self
+            { Context { resources : Resources :: new(priority), } }
+        } #[doc = r" Spawns the task directly"] pub fn
+        spawn(_0 : u32, _1 : u8,) -> Result < (), (u32, u8,) >
+        {
+            let input = (_0, _1,) ; unsafe
+            {
+                if let Some(index) = rtic :: export :: interrupt ::
+                free(| _ | crate :: app :: __rtic_internal_beep_FQ .
+                     dequeue())
+                {
+                    crate :: app :: __rtic_internal_beep_INPUTS .
+                    get_unchecked_mut(usize :: from(index)) . as_mut_ptr() .
+                    write(input) ; rtic :: export :: interrupt ::
+                    free(| _ |
+                         {
+                             crate :: app :: __rtic_internal_P1_RQ .
+                             enqueue_unchecked((crate :: app :: P1_T :: beep,
+                                                index)) ;
+                         }) ; rtic ::
+                    pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL1) ;
+                    Ok(())
+                } else { Err(input) }
+            }
+        } pub use MyMono :: spawn_after ; pub use MyMono :: spawn_at ; pub use
+        MyMono :: SpawnHandle ;
+        #[doc = r" Holds methods related to this monotonic"] pub mod MyMono
+        {
+            use super :: * ; #[allow(unused_imports)] use crate :: app ::
+            __rtic_internal_TIMER_QUEUE_MARKER ; #[allow(unused_imports)] use
+            crate :: app :: SCHED_T ; #[allow(unused_imports)] use crate ::
+            buttons :: * ; #[allow(unused_imports)] use crate :: pot :: * ;
+            #[allow(unused_imports)] use crate :: ui :: * ;
+            #[allow(unused_imports)] use crate :: types :: * ;
+            #[allow(unused_imports)] use crate :: beep :: * ;
+            #[allow(unused_imports)] use stm32f1xx_hal ::
+            {
+                adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
+                {
+                    gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
+                    { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
+                    { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
+                    ExtiPin,
+                }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+                { I2C1, USART1, ADC1, TIM2 }, i2c ::
+                { BlockingI2c, DutyCycle, Mode }, pwm :: C1
+            } ; #[allow(unused_imports)] use dwt_systick_monotonic ::
+            DwtSystick ; #[allow(unused_imports)] use cortex_m :: asm :: delay
+            ; #[allow(unused_imports)] use ssd1306 ::
+            { prelude :: *, Builder, I2CDIBuilder, } ;
+            #[allow(unused_imports)] use embedded_graphics ::
+            {
+                fonts :: Text, pixelcolor :: BinaryColor, prelude :: *, style
+                :: TextStyle,
+            } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
+            #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
+            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr
+            :: write_volatile ; #[allow(unused_imports)] use core :: fmt ::
+            Write ; #[allow(unused_imports)] use core :: future :: Future ;
+            #[allow(unused_imports)] use stm32f1xx_hal :: gpio :: Analog ; pub
+            struct SpawnHandle { #[doc(hidden)] marker : u32, } impl
+            SpawnHandle
+            {
+                pub fn cancel(self) -> Result < (u32, u8,), () >
+                {
+                    rtic :: export :: interrupt ::
+                    free(| _ | unsafe
+                         {
+                             let tq = & mut * crate :: app ::
+                             __rtic_internal_TQ_MyMono . as_mut_ptr() ; if let
+                             Some((_task, index)) = tq .
+                             cancel_marker(self . marker)
+                             {
+                                 let msg = crate :: app ::
+                                 __rtic_internal_beep_INPUTS .
+                                 get_unchecked(usize :: from(index)) .
+                                 as_ptr() . read() ; crate :: app ::
+                                 __rtic_internal_beep_FQ . split() . 0 .
+                                 enqueue_unchecked(index) ; Ok(msg)
+                             } else { Err(()) }
+                         })
+                } #[inline] pub fn reschedule_after < D > (self, duration : D)
+                -> Result < Self, () > where D : rtic :: time :: duration ::
+                Duration + rtic :: time :: fixed_point :: FixedPoint, D :: T :
+                Into << crate :: app :: MyMono as rtic :: time :: Clock > :: T
+                >,
+                {
+                    self .
+                    reschedule_at(crate :: app :: monotonics :: MyMono ::
+                                  now() + duration)
+                } pub fn
+                reschedule_at(self, instant : rtic :: time :: Instant < crate
+                              :: app :: MyMono >) -> Result < Self, () >
+                {
+                    rtic :: export :: interrupt ::
+                    free(| _ | unsafe
+                         {
+                             let marker = __rtic_internal_TIMER_QUEUE_MARKER ;
+                             __rtic_internal_TIMER_QUEUE_MARKER =
+                             __rtic_internal_TIMER_QUEUE_MARKER .
+                             wrapping_add(1) ; let tq = & mut * crate :: app
+                             :: __rtic_internal_TQ_MyMono . as_mut_ptr() ; tq
+                             .
+                             update_marker(self . marker, marker, instant, ||
+                                           cortex_m :: peripheral :: SCB ::
+                                           set_pendst()) .
+                             map(| _ | SpawnHandle { marker })
+                         })
+                }
+            }
+            #[doc =
+              r" Spawns the task after a set duration relative to the current time"]
+            #[doc = r""]
+            #[doc =
+              r" This will use the time `Instant::new(0)` as baseline if called in `#[init]`,"]
+            #[doc =
+              r" so if you use a non-resetable timer use `spawn_at` when in `#[init]`"]
+            pub fn spawn_after < D > (duration : D, _0 : u32, _1 : u8) ->
+            Result < SpawnHandle, (u32, u8,) > where D : rtic :: time ::
+            duration :: Duration + rtic :: time :: fixed_point :: FixedPoint,
+            D :: T : Into << crate :: app :: MyMono as rtic :: time :: Clock >
+            :: T >,
+            {
+                let instant = if rtic :: export :: interrupt ::
+                free(| _ | unsafe
+                     {
+                         crate :: app ::
+                         __rtic_internal_MONOTONIC_STORAGE_MyMono . is_none()
+                     }) { rtic :: time :: Instant :: new(0) } else
+                { crate :: app :: monotonics :: MyMono :: now() } ;
+                spawn_at(instant + duration, _0, _1)
+            } #[doc = r" Spawns the task at a fixed time instant"] pub fn
+            spawn_at(instant : rtic :: time :: Instant < crate :: app ::
+                     MyMono >, _0 : u32, _1 : u8) -> Result < SpawnHandle,
+            (u32, u8,) >
+            {
+                unsafe
+                {
+                    let input = (_0, _1,) ; if let Some(index) = rtic ::
+                    export :: interrupt ::
+                    free(| _ | crate :: app :: __rtic_internal_beep_FQ .
+                         dequeue())
+                    {
+                        crate :: app :: __rtic_internal_beep_INPUTS .
+                        get_unchecked_mut(usize :: from(index)) . as_mut_ptr()
+                        . write(input) ; crate :: app ::
+                        __rtic_internal_beep_MyMono_INSTANTS .
+                        get_unchecked_mut(usize :: from(index)) . as_mut_ptr()
+                        . write(instant) ; rtic :: export :: interrupt ::
+                        free(| _ |
+                             {
+                                 let marker =
+                                 __rtic_internal_TIMER_QUEUE_MARKER ; let nr =
+                                 rtic :: export :: NotReady
+                                 {
+                                     instant, index, task : crate :: app ::
+                                     SCHED_T :: beep, marker,
+                                 } ; __rtic_internal_TIMER_QUEUE_MARKER =
+                                 __rtic_internal_TIMER_QUEUE_MARKER .
+                                 wrapping_add(1) ; let tq = unsafe
+                                 {
+                                     & mut * crate :: app ::
+                                     __rtic_internal_TQ_MyMono . as_mut_ptr()
+                                 } ; tq .
+                                 enqueue_unchecked(nr, || core :: mem ::
+                                                   transmute :: < _, cortex_m
+                                                   :: peripheral :: SYST >
+                                                   (()) . enable_interrupt(),
+                                                   || cortex_m :: peripheral
+                                                   :: SCB :: set_pendst(),
+                                                   crate :: app ::
+                                                   __rtic_internal_MONOTONIC_STORAGE_MyMono
+                                                   . as_mut()) ;
+                                 Ok(SpawnHandle { marker })
+                             })
+                    } else { Err(input) }
+                }
+            }
+        }
+    } #[allow(non_snake_case)] #[doc = "Resources `unbeep` has access to"] pub
+    struct __rtic_internal_unbeepResources < 'a >
+    { pub buzzer : resources :: buzzer < 'a >, } #[allow(non_snake_case)]
+    #[doc = "Software task"] pub mod unbeep
+    {
+        #[allow(unused_imports)] use crate :: buttons :: * ;
+        #[allow(unused_imports)] use crate :: pot :: * ;
+        #[allow(unused_imports)] use crate :: ui :: * ;
+        #[allow(unused_imports)] use crate :: types :: * ;
+        #[allow(unused_imports)] use crate :: beep :: * ;
+        #[allow(unused_imports)] use stm32f1xx_hal ::
+        {
+            adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
+            {
+                gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
+                { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
+                { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
+                ExtiPin,
+            }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+            { I2C1, USART1, ADC1, TIM2 }, i2c ::
+            { BlockingI2c, DutyCycle, Mode }, pwm :: C1
+        } ; #[allow(unused_imports)] use dwt_systick_monotonic :: DwtSystick ;
+        #[allow(unused_imports)] use cortex_m :: asm :: delay ;
+        #[allow(unused_imports)] use ssd1306 ::
+        { prelude :: *, Builder, I2CDIBuilder, } ; #[allow(unused_imports)]
+        use embedded_graphics ::
+        {
+            fonts :: Text, pixelcolor :: BinaryColor, prelude :: *, style ::
+            TextStyle,
+        } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
+        #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
+        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
+        #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use stm32f1xx_hal :: gpio :: Analog ;
+        #[doc(inline)] pub use super :: __rtic_internal_unbeepResources as
+        Resources ; #[doc = r" Execution context"] pub struct Context < 'a >
+        {
+            #[doc = r" Resources this task has access to"] pub resources :
+            Resources < 'a >,
+        } impl < 'a > Context < 'a >
+        {
+            #[inline(always)] pub unsafe fn
+            new(priority : & 'a rtic :: export :: Priority) -> Self
+            { Context { resources : Resources :: new(priority), } }
+        } #[doc = r" Spawns the task directly"] pub fn
+        spawn(_0 : u32, _1 : u8,) -> Result < (), (u32, u8,) >
+        {
+            let input = (_0, _1,) ; unsafe
+            {
+                if let Some(index) = rtic :: export :: interrupt ::
+                free(| _ | crate :: app :: __rtic_internal_unbeep_FQ .
+                     dequeue())
+                {
+                    crate :: app :: __rtic_internal_unbeep_INPUTS .
+                    get_unchecked_mut(usize :: from(index)) . as_mut_ptr() .
+                    write(input) ; rtic :: export :: interrupt ::
+                    free(| _ |
+                         {
+                             crate :: app :: __rtic_internal_P1_RQ .
+                             enqueue_unchecked((crate :: app :: P1_T ::
+                                                unbeep, index)) ;
+                         }) ; rtic ::
+                    pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL1) ;
+                    Ok(())
+                } else { Err(input) }
+            }
+        } pub use MyMono :: spawn_after ; pub use MyMono :: spawn_at ; pub use
+        MyMono :: SpawnHandle ;
+        #[doc = r" Holds methods related to this monotonic"] pub mod MyMono
+        {
+            use super :: * ; #[allow(unused_imports)] use crate :: app ::
+            __rtic_internal_TIMER_QUEUE_MARKER ; #[allow(unused_imports)] use
+            crate :: app :: SCHED_T ; #[allow(unused_imports)] use crate ::
+            buttons :: * ; #[allow(unused_imports)] use crate :: pot :: * ;
+            #[allow(unused_imports)] use crate :: ui :: * ;
+            #[allow(unused_imports)] use crate :: types :: * ;
+            #[allow(unused_imports)] use crate :: beep :: * ;
+            #[allow(unused_imports)] use stm32f1xx_hal ::
+            {
+                adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
+                {
+                    gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
+                    { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
+                    { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
+                    ExtiPin,
+                }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+                { I2C1, USART1, ADC1, TIM2 }, i2c ::
+                { BlockingI2c, DutyCycle, Mode }, pwm :: C1
+            } ; #[allow(unused_imports)] use dwt_systick_monotonic ::
+            DwtSystick ; #[allow(unused_imports)] use cortex_m :: asm :: delay
+            ; #[allow(unused_imports)] use ssd1306 ::
+            { prelude :: *, Builder, I2CDIBuilder, } ;
+            #[allow(unused_imports)] use embedded_graphics ::
+            {
+                fonts :: Text, pixelcolor :: BinaryColor, prelude :: *, style
+                :: TextStyle,
+            } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
+            #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
+            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr
+            :: write_volatile ; #[allow(unused_imports)] use core :: fmt ::
+            Write ; #[allow(unused_imports)] use core :: future :: Future ;
+            #[allow(unused_imports)] use stm32f1xx_hal :: gpio :: Analog ; pub
+            struct SpawnHandle { #[doc(hidden)] marker : u32, } impl
+            SpawnHandle
+            {
+                pub fn cancel(self) -> Result < (u32, u8,), () >
+                {
+                    rtic :: export :: interrupt ::
+                    free(| _ | unsafe
+                         {
+                             let tq = & mut * crate :: app ::
+                             __rtic_internal_TQ_MyMono . as_mut_ptr() ; if let
+                             Some((_task, index)) = tq .
+                             cancel_marker(self . marker)
+                             {
+                                 let msg = crate :: app ::
+                                 __rtic_internal_unbeep_INPUTS .
+                                 get_unchecked(usize :: from(index)) .
+                                 as_ptr() . read() ; crate :: app ::
+                                 __rtic_internal_unbeep_FQ . split() . 0 .
+                                 enqueue_unchecked(index) ; Ok(msg)
+                             } else { Err(()) }
+                         })
+                } #[inline] pub fn reschedule_after < D > (self, duration : D)
+                -> Result < Self, () > where D : rtic :: time :: duration ::
+                Duration + rtic :: time :: fixed_point :: FixedPoint, D :: T :
+                Into << crate :: app :: MyMono as rtic :: time :: Clock > :: T
+                >,
+                {
+                    self .
+                    reschedule_at(crate :: app :: monotonics :: MyMono ::
+                                  now() + duration)
+                } pub fn
+                reschedule_at(self, instant : rtic :: time :: Instant < crate
+                              :: app :: MyMono >) -> Result < Self, () >
+                {
+                    rtic :: export :: interrupt ::
+                    free(| _ | unsafe
+                         {
+                             let marker = __rtic_internal_TIMER_QUEUE_MARKER ;
+                             __rtic_internal_TIMER_QUEUE_MARKER =
+                             __rtic_internal_TIMER_QUEUE_MARKER .
+                             wrapping_add(1) ; let tq = & mut * crate :: app
+                             :: __rtic_internal_TQ_MyMono . as_mut_ptr() ; tq
+                             .
+                             update_marker(self . marker, marker, instant, ||
+                                           cortex_m :: peripheral :: SCB ::
+                                           set_pendst()) .
+                             map(| _ | SpawnHandle { marker })
+                         })
+                }
+            }
+            #[doc =
+              r" Spawns the task after a set duration relative to the current time"]
+            #[doc = r""]
+            #[doc =
+              r" This will use the time `Instant::new(0)` as baseline if called in `#[init]`,"]
+            #[doc =
+              r" so if you use a non-resetable timer use `spawn_at` when in `#[init]`"]
+            pub fn spawn_after < D > (duration : D, _0 : u32, _1 : u8) ->
+            Result < SpawnHandle, (u32, u8,) > where D : rtic :: time ::
+            duration :: Duration + rtic :: time :: fixed_point :: FixedPoint,
+            D :: T : Into << crate :: app :: MyMono as rtic :: time :: Clock >
+            :: T >,
+            {
+                let instant = if rtic :: export :: interrupt ::
+                free(| _ | unsafe
+                     {
+                         crate :: app ::
+                         __rtic_internal_MONOTONIC_STORAGE_MyMono . is_none()
+                     }) { rtic :: time :: Instant :: new(0) } else
+                { crate :: app :: monotonics :: MyMono :: now() } ;
+                spawn_at(instant + duration, _0, _1)
+            } #[doc = r" Spawns the task at a fixed time instant"] pub fn
+            spawn_at(instant : rtic :: time :: Instant < crate :: app ::
+                     MyMono >, _0 : u32, _1 : u8) -> Result < SpawnHandle,
+            (u32, u8,) >
+            {
+                unsafe
+                {
+                    let input = (_0, _1,) ; if let Some(index) = rtic ::
+                    export :: interrupt ::
+                    free(| _ | crate :: app :: __rtic_internal_unbeep_FQ .
+                         dequeue())
+                    {
+                        crate :: app :: __rtic_internal_unbeep_INPUTS .
+                        get_unchecked_mut(usize :: from(index)) . as_mut_ptr()
+                        . write(input) ; crate :: app ::
+                        __rtic_internal_unbeep_MyMono_INSTANTS .
+                        get_unchecked_mut(usize :: from(index)) . as_mut_ptr()
+                        . write(instant) ; rtic :: export :: interrupt ::
+                        free(| _ |
+                             {
+                                 let marker =
+                                 __rtic_internal_TIMER_QUEUE_MARKER ; let nr =
+                                 rtic :: export :: NotReady
+                                 {
+                                     instant, index, task : crate :: app ::
+                                     SCHED_T :: unbeep, marker,
                                  } ; __rtic_internal_TIMER_QUEUE_MARKER =
                                  __rtic_internal_TIMER_QUEUE_MARKER .
                                  wrapping_add(1) ; let tq = unsafe
@@ -1253,6 +1732,25 @@
                      CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
             }
         }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)]
+    #[link_section = ".uninit.rtic8"] static mut __rtic_internal_buzzer : core
+    :: mem :: MaybeUninit < stm32f1xx_hal :: pwm :: PwmChannel < TIM2, C1 > >
+    = core :: mem :: MaybeUninit :: uninit() ; impl < 'a > rtic :: Mutex for
+    resources :: buzzer < 'a >
+    {
+        type T = stm32f1xx_hal :: pwm :: PwmChannel < TIM2, C1 > ;
+        #[inline(always)] fn lock < RTIC_INTERNAL_R >
+        (& mut self, f : impl
+         FnOnce(& mut stm32f1xx_hal :: pwm :: PwmChannel < TIM2, C1 >) ->
+         RTIC_INTERNAL_R) -> RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(__rtic_internal_buzzer . as_mut_ptr(), self . priority(),
+                     CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
+            }
+        }
     } #[allow(non_snake_case)] #[no_mangle] unsafe fn EXTI9_5()
     {
         const PRIORITY : u8 = 1u8 ; rtic :: export ::
@@ -1281,11 +1779,11 @@
     } #[doc(hidden)] static mut __rtic_internal_handle_adc_FQ : rtic :: export
     :: SCFQ < rtic :: export :: consts :: U1 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic8"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic9"] #[doc(hidden)] static mut
     __rtic_internal_handle_adc_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 1] = [core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic9"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic10"] #[doc(hidden)] static mut
     __rtic_internal_handle_adc_INPUTS :
     [core :: mem :: MaybeUninit < bool > ; 1] =
     [core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
@@ -1306,12 +1804,12 @@
     } #[doc(hidden)] static mut __rtic_internal_update_display_FQ : rtic ::
     export :: SCFQ < rtic :: export :: consts :: U2 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic10"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic11"] #[doc(hidden)] static mut
     __rtic_internal_update_display_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 2] =
     [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
-     uninit(),] ; #[link_section = ".uninit.rtic11"] #[doc(hidden)] static mut
+     uninit(),] ; #[link_section = ".uninit.rtic12"] #[doc(hidden)] static mut
     __rtic_internal_update_display_INPUTS :
     [core :: mem :: MaybeUninit < ScreenPage > ; 2] =
     [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
@@ -1332,7 +1830,7 @@
     } #[doc(hidden)] static mut __rtic_internal_reset_display_FQ : rtic ::
     export :: SCFQ < rtic :: export :: consts :: U16 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic12"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic13"] #[doc(hidden)] static mut
     __rtic_internal_reset_display_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 10] =
@@ -1342,7 +1840,7 @@
      mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit :: uninit(),
      core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
      uninit(), core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic13"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic14"] #[doc(hidden)] static mut
     __rtic_internal_reset_display_INPUTS :
     [core :: mem :: MaybeUninit < () > ; 10] =
     [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
@@ -1362,10 +1860,48 @@
                 sys_state : resources :: sys_state :: new(priority),
             }
         }
+    } #[doc(hidden)] static mut __rtic_internal_beep_FQ : rtic :: export ::
+    SCFQ < rtic :: export :: consts :: U1 > = rtic :: export ::
+    Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
+    #[link_section = ".uninit.rtic15"] #[doc(hidden)] static mut
+    __rtic_internal_beep_MyMono_INSTANTS :
+    [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
+     8_000_000 > >> ; 1] = [core :: mem :: MaybeUninit :: uninit(),] ;
+    #[link_section = ".uninit.rtic16"] #[doc(hidden)] static mut
+    __rtic_internal_beep_INPUTS :
+    [core :: mem :: MaybeUninit < (u32, u8,) > ; 1] =
+    [core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
+    __rtic_internal_beepResources < 'a >
+    {
+        #[inline(always)] pub unsafe fn
+        new(priority : & 'a rtic :: export :: Priority) -> Self
+        {
+            __rtic_internal_beepResources
+            { buzzer : resources :: buzzer :: new(priority), }
+        }
+    } #[doc(hidden)] static mut __rtic_internal_unbeep_FQ : rtic :: export ::
+    SCFQ < rtic :: export :: consts :: U1 > = rtic :: export ::
+    Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
+    #[link_section = ".uninit.rtic17"] #[doc(hidden)] static mut
+    __rtic_internal_unbeep_MyMono_INSTANTS :
+    [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
+     8_000_000 > >> ; 1] = [core :: mem :: MaybeUninit :: uninit(),] ;
+    #[link_section = ".uninit.rtic18"] #[doc(hidden)] static mut
+    __rtic_internal_unbeep_INPUTS :
+    [core :: mem :: MaybeUninit < (u32, u8,) > ; 1] =
+    [core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
+    __rtic_internal_unbeepResources < 'a >
+    {
+        #[inline(always)] pub unsafe fn
+        new(priority : & 'a rtic :: export :: Priority) -> Self
+        {
+            __rtic_internal_unbeepResources
+            { buzzer : resources :: buzzer :: new(priority), }
+        }
     } #[allow(non_camel_case_types)] #[derive(Clone, Copy)] #[doc(hidden)] pub
-    enum P1_T { handle_adc, reset_display, update_display, } #[doc(hidden)]
-    static mut __rtic_internal_P1_RQ : rtic :: export :: SCRQ < P1_T, rtic ::
-    export :: consts :: U16 > = rtic :: export ::
+    enum P1_T { beep, handle_adc, reset_display, unbeep, update_display, }
+    #[doc(hidden)] static mut __rtic_internal_P1_RQ : rtic :: export :: SCRQ <
+    P1_T, rtic :: export :: consts :: U16 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
     #[allow(non_snake_case)]
     #[doc = "Interrupt handler to dispatch tasks at priority 1"] #[no_mangle]
@@ -1380,7 +1916,16 @@
                 {
                     match task
                     {
-                        P1_T :: handle_adc =>
+                        P1_T :: beep =>
+                        {
+                            let(_0, _1,) = __rtic_internal_beep_INPUTS .
+                            get_unchecked(usize :: from(index)) . as_ptr() .
+                            read() ; __rtic_internal_beep_FQ . split() . 0 .
+                            enqueue_unchecked(index) ; let priority = & rtic
+                            :: export :: Priority :: new(PRIORITY) ; crate ::
+                            app ::
+                            beep(beep :: Context :: new(priority), _0, _1)
+                        } P1_T :: handle_adc =>
                         {
                             let _0 = __rtic_internal_handle_adc_INPUTS .
                             get_unchecked(usize :: from(index)) . as_ptr() .
@@ -1400,6 +1945,15 @@
                             new(PRIORITY) ; crate :: app ::
                             reset_display(reset_display :: Context ::
                                           new(priority))
+                        } P1_T :: unbeep =>
+                        {
+                            let(_0, _1,) = __rtic_internal_unbeep_INPUTS .
+                            get_unchecked(usize :: from(index)) . as_ptr() .
+                            read() ; __rtic_internal_unbeep_FQ . split() . 0 .
+                            enqueue_unchecked(index) ; let priority = & rtic
+                            :: export :: Priority :: new(PRIORITY) ; crate ::
+                            app ::
+                            unbeep(unbeep :: Context :: new(priority), _0, _1)
                         } P1_T :: update_display =>
                         {
                             let _0 = __rtic_internal_update_display_INPUTS .
@@ -1417,13 +1971,13 @@
     } #[doc(hidden)] #[allow(non_camel_case_types)] static mut
     __rtic_internal_TIMER_QUEUE_MARKER : u32 = 0 ; #[doc(hidden)]
     #[allow(non_camel_case_types)] #[derive(Clone, Copy)] pub enum SCHED_T
-    { handle_adc, update_display, reset_display, } #[doc(hidden)] static mut
-    __rtic_internal_TQ_MyMono : core :: mem :: MaybeUninit < rtic :: export ::
-    TimerQueue < DwtSystick < 8_000_000 >, SCHED_T, rtic :: export :: consts
-    :: U13 >> = core :: mem :: MaybeUninit :: uninit() ; #[doc(hidden)] static
-    mut __rtic_internal_MONOTONIC_STORAGE_MyMono : Option < DwtSystick <
-    8_000_000 > > = None ; #[no_mangle] #[allow(non_snake_case)] unsafe fn
-    SysTick()
+    { handle_adc, update_display, reset_display, beep, unbeep, }
+    #[doc(hidden)] static mut __rtic_internal_TQ_MyMono : core :: mem ::
+    MaybeUninit < rtic :: export :: TimerQueue < DwtSystick < 8_000_000 >,
+    SCHED_T, rtic :: export :: consts :: U15 >> = core :: mem :: MaybeUninit
+    :: uninit() ; #[doc(hidden)] static mut
+    __rtic_internal_MONOTONIC_STORAGE_MyMono : Option < DwtSystick < 8_000_000
+    > > = None ; #[no_mangle] #[allow(non_snake_case)] unsafe fn SysTick()
     {
         while let Some((task, index)) = rtic :: export :: interrupt ::
         free(| _ | if let Some(mono) = crate :: app ::
@@ -1461,6 +2015,20 @@
                     rtic ::
                     pend(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
                          :: interrupt :: DMA1_CHANNEL1) ;
+                } SCHED_T :: beep =>
+                {
+                    rtic :: export :: interrupt ::
+                    free(| _ | __rtic_internal_P1_RQ . split() . 0 .
+                         enqueue_unchecked((P1_T :: beep, index))) ; rtic ::
+                    pend(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
+                         :: interrupt :: DMA1_CHANNEL1) ;
+                } SCHED_T :: unbeep =>
+                {
+                    rtic :: export :: interrupt ::
+                    free(| _ | __rtic_internal_P1_RQ . split() . 0 .
+                         enqueue_unchecked((P1_T :: unbeep, index))) ; rtic ::
+                    pend(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
+                         :: interrupt :: DMA1_CHANNEL1) ;
                 }
             }
         } rtic :: export :: interrupt ::
@@ -1481,18 +2049,24 @@
             :: < stm32f1xx_hal :: rcc :: Clocks > () ; rtic :: export ::
             assert_send :: < Adc < ADC1 > > () ; rtic :: export :: assert_send
             :: < PA4 < Analog > > () ; rtic :: export :: assert_send :: < u16
-            > () ; rtic :: export :: assert_send :: < bool > () ; rtic ::
-            export :: assert_send :: < ScreenPage > () ; rtic :: export ::
-            assert_monotonic :: < DwtSystick < 8_000_000 > > () ; rtic ::
-            export :: interrupt :: disable() ; (0 .. 1u8) .
+            > () ; rtic :: export :: assert_send :: < stm32f1xx_hal :: pwm ::
+            PwmChannel < TIM2, C1 > > () ; rtic :: export :: assert_send :: <
+            bool > () ; rtic :: export :: assert_send :: < ScreenPage > () ;
+            rtic :: export :: assert_send :: < u32 > () ; rtic :: export ::
+            assert_send :: < u8 > () ; rtic :: export :: assert_monotonic :: <
+            DwtSystick < 8_000_000 > > () ; rtic :: export :: interrupt ::
+            disable() ; (0 .. 1u8) .
             for_each(| i | __rtic_internal_handle_adc_FQ .
                      enqueue_unchecked(i)) ; (0 .. 2u8) .
             for_each(| i | __rtic_internal_update_display_FQ .
                      enqueue_unchecked(i)) ; (0 .. 10u8) .
             for_each(| i | __rtic_internal_reset_display_FQ .
-                     enqueue_unchecked(i)) ; let mut core : rtic :: export ::
-            Peripherals = rtic :: export :: Peripherals :: steal() . into() ;
-            let _ =
+                     enqueue_unchecked(i)) ; (0 .. 1u8) .
+            for_each(| i | __rtic_internal_beep_FQ . enqueue_unchecked(i)) ;
+            (0 .. 1u8) .
+            for_each(| i | __rtic_internal_unbeep_FQ . enqueue_unchecked(i)) ;
+            let mut core : rtic :: export :: Peripherals = rtic :: export ::
+            Peripherals :: steal() . into() ; let _ =
             [() ;
              ((1 << stm32f1xx_hal :: pac :: NVIC_PRIO_BITS) - 1u8 as usize)] ;
             core . NVIC .
@@ -1533,8 +2107,9 @@
             as_mut_ptr() . write(late . adc1) ;
             __rtic_internal_button_brightness . as_mut_ptr() .
             write(late . button_brightness) ; __rtic_internal_button_start .
-            as_mut_ptr() . write(late . button_start) ; __rtic_internal_clocks
-            . as_mut_ptr() . write(late . clocks) ; __rtic_internal_display .
+            as_mut_ptr() . write(late . button_start) ; __rtic_internal_buzzer
+            . as_mut_ptr() . write(late . buzzer) ; __rtic_internal_clocks .
+            as_mut_ptr() . write(late . clocks) ; __rtic_internal_display .
             as_mut_ptr() . write(late . display) ; __rtic_internal_pot .
             as_mut_ptr() . write(late . pot) ; __rtic_internal_pot_pos .
             as_mut_ptr() . write(late . pot_pos) ; monotonics . 0 . reset() ;

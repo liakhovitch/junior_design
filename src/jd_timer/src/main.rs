@@ -21,6 +21,7 @@ mod app {
     use crate::pot::*;
     use crate::ui::*;
     use crate::types::*;
+    use crate::beep::*;
 
     use stm32f1xx_hal::{
         adc::{Adc, SampleTime},
@@ -35,9 +36,10 @@ mod app {
             Edge::*,
             ExtiPin,
         },
-        timer::{Event, Timer},
-        pac::{I2C1, USART1, ADC1},
+        timer::{Event, Timer, Tim2NoRemap},
+        pac::{I2C1, USART1, ADC1, TIM2},
         i2c::{BlockingI2c, DutyCycle, Mode},
+        pwm::C1
     };
 
     use dwt_systick_monotonic::DwtSystick;
@@ -84,6 +86,7 @@ mod app {
         adc1: Adc<ADC1>,
         pot: PA4<Analog>,
         pot_pos: u16,
+        buzzer: stm32f1xx_hal::pwm::PwmChannel<TIM2, C1>,
         #[init(0)]
         brightness_state: u8,
         #[init(false)]
@@ -155,6 +158,18 @@ mod app {
         let mut pot = gpioa.pa4.into_analog(&mut gpioa.crl);
         let mut pot_pos = adc1.read(&mut pot).unwrap();
         pot_pos = pot_pos >> 4;
+
+        // ------------
+        // Init buzzer
+        // ------------
+        // For now, only using PWM on one pin
+        let buzz0 = gpioa.pa0.into_alternate_push_pull(&mut gpioa.crl);
+        let mut buzz1 = gpioa.pa1.into_push_pull_output(&mut gpioa.crl);
+        buzz1.set_high().unwrap();
+        let mut buzzer = Timer::tim2(cx.device.TIM2, &clocks, &mut rcc.apb1)
+            .pwm::<Tim2NoRemap, _, _, _>(buzz0, &mut afio.mapr, 500.hz()).split();
+        buzzer.set_duty(buzzer.get_max_duty() / 2);
+        let _ = beep::spawn(70, 2);
 
         // Serial disabled because TX pin is being hacked into use for PSU control.
         // Serial was only there for debug purposes anyway. We have SWD for debugging.
@@ -229,6 +244,7 @@ mod app {
             adc1,
             pot,
             pot_pos,
+            buzzer,
         },
          // Return timer object so RTIC can use it for task scheduling.
          init::Monotonics(mono))
@@ -253,5 +269,9 @@ mod app {
         fn update_display(cx: update_display::Context, screen_type:ScreenPage);
         #[task(resources = [disp_call_cnt, sys_state], priority=1, capacity=10)]
         fn reset_display(cx: reset_display::Context);
+        #[task(resources = [buzzer], priority=1, capacity=1)]
+        fn beep(cx: beep::Context, length: u32, count: u8);
+        #[task(resources = [buzzer], priority=1, capacity=1)]
+        fn unbeep(cx: unbeep::Context, length: u32, count: u8);
     }
 }

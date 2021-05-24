@@ -239,7 +239,7 @@ mod app {
         // Read initial ADC value
         let _ = handle_adc::spawn(true);
         // Do startup beep
-        let _ = beep::spawn(70, 2);
+        //let _ = beep::spawn(70, 2);
         // Show boot message
         let _ = update_display::spawn(ScreenPage::Boot);
 

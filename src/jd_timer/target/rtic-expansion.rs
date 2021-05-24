@@ -144,8 +144,7 @@
         interface = I2CDIBuilder :: new() . init(i2c) ; let mut display :
         GraphicsMode < _, _ > = Builder :: new() . connect(interface) . into()
         ; display . init() . unwrap() ; display . clear() ; let _ = handle_adc
-        :: spawn(true) ; let _ = beep :: spawn(70, 2) ; let _ = update_display
-        :: spawn(ScreenPage :: Boot) ;
+        :: spawn(true) ; let _ = update_display :: spawn(ScreenPage :: Boot) ;
         (init :: LateResources
          {
              display, button_start, button_brightness, EXTI : cx . device .

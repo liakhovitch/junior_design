@@ -3,6 +3,7 @@ use crate::app::*;
 use crate::types::{ScreenPage, SysState};
 use crate::config::{HARD_BOILED, SOFT_BOILED};
 use crate::logo::LOGO;
+use crate::rtc_util;
 
 use rtic::Mutex;
 
@@ -31,8 +32,7 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
         (cx.resources.display, cx.resources.brightness_state);
     let mut max_time = cx.resources.max_time;
     let mut disp_call_cnt = cx.resources.disp_call_cnt;
-    // TODO: Replace this
-    //let mut rtc = cx.resources.rtc;
+    let mut rtc = cx.resources.rtc;
 
     display.lock(|display| {
         match screen_type {
@@ -79,18 +79,16 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
             // Display the countdown screen
             ScreenPage::Timer => {
                 disp_call_cnt.lock(|disp_call_cnt|{*disp_call_cnt = 0});
-                // TODO: Replace this
-                let time_remaining: u16 =0;
-                    /*let time_remaining: u16 = rtc.lock(|rtc| {
-                        return max_time.lock(|max_time|{
-                            let current_time = rtc.current_time() as u16;
-                            if current_time <= *max_time {
-                                return *max_time - current_time
-                            } else {
-                                return 0
-                            }
-                        });
-                    });*/
+                let time_remaining: u16 = rtc.lock(|rtc| {
+                    return max_time.lock(|max_time|{
+                        let current_time = rtc_util::current_time(rtc) as u16;
+                        if current_time <= *max_time {
+                            return *max_time - current_time
+                        } else {
+                            return 0
+                        }
+                    });
+                });
                 display.clear();
                 // Format the text
                 let mut data = String::<U16>::from("");
@@ -136,9 +134,15 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
                 let _ = reset_display::spawn_after(Seconds(2_u32));
             },
             ScreenPage::Alarm => {
+                display.clear();
+                Text::new("Alarm!", Point::new(20,16))
+                    .into_styled(TextStyle::new(ProFont24Point, BinaryColor::On))
+                    .draw(display)
+                    .unwrap();
+                display.flush().unwrap();
                 // Schedule the screen to go back to what it was previously showing
                 disp_call_cnt.lock(|disp_call_cnt|{*disp_call_cnt += 1});
-                let _ = reset_display::spawn_after(Seconds(2_u32));
+                let _ = reset_display::spawn_after(Seconds(5_u32));
             },
             ScreenPage::Boot => {
                 display.clear();
@@ -162,7 +166,7 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
                 Image::new(&raw_image, Point::zero())
                     .draw(display)
                     .unwrap();
-                Text::new("Shutting Down", Point::new(20,44))
+                Text::new("Power Off", Point::new(20,44))
                     .into_styled(TextStyle::new(ProFont14Point, BinaryColor::On))
                     .draw(display)
                     .unwrap();

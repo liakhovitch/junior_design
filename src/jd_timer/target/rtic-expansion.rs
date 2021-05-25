@@ -105,9 +105,11 @@
         constrain(& mut rcc . apb2) ; let clocks = rcc . cfgr .
         freeze(& mut flash . acr) ; let mut gpioa = cx . device . GPIOA .
         split(& mut rcc . apb2) ; let mut gpiob = cx . device . GPIOB .
-        split(& mut rcc . apb2) ; let mut pwr = cx . device . PWR ; let mut
-        bkp = cx . device . BKP ; let mut rtc = cx . device . RTC ; let mut
-        lsi_hertz : u32 = 30_000 ; unsafe
+        split(& mut rcc . apb2) ; let mut debug_pin = gpioa . pa10 .
+        into_push_pull_output(& mut gpioa . crh) ; debug_pin . set_low() .
+        unwrap() ; let mut pwr = cx . device . PWR ; let mut bkp = cx . device
+        . BKP ; let mut rtc = cx . device . RTC ; let mut lsi_hertz : u32 =
+        30_000 ; unsafe
         {
             let pwr_ptr : * mut u32 = stm32f1xx_hal :: pac :: PWR :: ptr() as
             * mut u32 ; let rcc_ptr : * mut u32 = stm32f1xx_hal :: pac :: RCC
@@ -135,8 +137,7 @@
                       write(| w | unsafe
                             { w . bits(prescaler as u16 as u32) }) ;
                   }) ; rtc_util :: set_time(& mut rtc, 0) ; rtc_util ::
-        set_alarm(& mut rtc, SLEEP_TIME as u32) ; rtc_util ::
-        listen_alarm(& mut rtc) ; rtc_util :: unlisten_seconds(& mut rtc) ;
+        unlisten_alarm(& mut rtc) ; rtc_util :: listen_seconds(& mut rtc) ;
         rtc_util :: clear_alarm_flag(& mut rtc) ; rtc_util ::
         clear_second_flag(& mut rtc) ; let mono = DwtSystick ::
         new(& mut core . DCB, core . DWT, core . SYST, 8_000_000) ; let mut
@@ -170,17 +171,26 @@
              }, clocks, & mut rcc . apb1, 1000, 10, 1000, 1000,) ; let
         interface = I2CDIBuilder :: new() . init(i2c) ; let mut display :
         GraphicsMode < _, _ > = Builder :: new() . connect(interface) . into()
-        ; display . init() . unwrap() ; display . clear() ; let _ = handle_adc
-        :: spawn(true) ; let _ = update_display :: spawn(ScreenPage :: Boot) ;
+        ; delay(1_000_000) ; display . init() . unwrap() ; display . clear() ;
+        let _ = handle_adc :: spawn(true) ; let _ = beep :: spawn(70, 2) ; let
+        _ = update_display :: spawn(ScreenPage :: Boot) ;
         (init :: LateResources
          {
              display, button_start, button_brightness, EXTI : cx . device .
-             EXTI, clocks, adc1, pot, pot_pos, sleep_pin, buzzer,
+             EXTI, clocks, adc1, pot, pot_pos, sleep_pin, buzzer, rtc,
          }, init :: Monotonics(mono))
-    } #[allow(non_snake_case)] fn idle(_cx : idle :: Context) -> !
+    } #[allow(non_snake_case)] fn idle(cx : idle :: Context) -> !
     {
-        use rtic :: Mutex as _ ; use rtic :: mutex_prelude :: * ; loop
-        { let _ = handle_adc :: spawn(false) ; }
+        use rtic :: Mutex as _ ; use rtic :: mutex_prelude :: * ; let mut
+        sys_state = cx . resources . sys_state ; loop
+        {
+            sys_state .
+            lock(| sys_state |
+                 {
+                     if * sys_state != SysState :: Timer
+                     { let _ = handle_adc :: spawn(false) ; }
+                 }) ;
+        }
     } #[allow(non_snake_case)] #[doc = "Initialization function"] pub mod init
     {
         #[allow(unused_imports)] use crate :: buttons :: * ;
@@ -227,7 +237,8 @@
             I2C1,
             (PB8 < Alternate < OpenDrain > >, PB9 < Alternate < OpenDrain > >)
             > >, DisplaySize128x64 >, pub pot : PA4 < Analog >, pub pot_pos :
-            u16, pub sleep_pin : PA9 < Output < PushPull > >
+            u16, pub rtc : stm32f1xx_hal :: pac :: RTC, pub sleep_pin : PA9 <
+            Output < PushPull > >
         } #[doc = r" Monotonics used by the system"] #[allow(non_snake_case)]
         pub struct Monotonics(pub DwtSystick < 8_000_000 >) ;
         #[doc = r" Execution context"] pub struct Context < 'a >
@@ -249,7 +260,10 @@
                 }
             }
         }
-    } #[allow(non_snake_case)] #[doc = "Idle loop"] pub mod idle
+    } #[allow(non_snake_case)] #[doc = "Resources `idle` has access to"] pub
+    struct __rtic_internal_idleResources < 'a >
+    { pub sys_state : resources :: sys_state < 'a >, }
+    #[allow(non_snake_case)] #[doc = "Idle loop"] pub mod idle
     {
         #[allow(unused_imports)] use crate :: buttons :: * ;
         #[allow(unused_imports)] use crate :: pot :: * ;
@@ -283,19 +297,29 @@
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
         { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
         Write ; #[allow(unused_imports)] use core :: future :: Future ;
-        #[allow(unused_imports)] use core :: ptr :: * ;
-        #[doc = r" Execution context"] pub struct Context < > { } impl < >
-        Context < >
+        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
+        super :: __rtic_internal_idleResources as Resources ;
+        #[doc = r" Execution context"] pub struct Context < 'a >
+        {
+            #[doc = r" Resources this task has access to"] pub resources :
+            Resources < 'a >,
+        } impl < 'a > Context < 'a >
         {
             #[inline(always)] pub unsafe fn
-            new(priority : & rtic :: export :: Priority) -> Self
-            { Context { } }
+            new(priority : & 'a rtic :: export :: Priority) -> Self
+            { Context { resources : Resources :: new(priority), } }
         }
     } mod resources
     {
         use rtic :: export :: Priority ; #[allow(non_camel_case_types)] pub
-        struct clocks < 'a > { priority : & 'a Priority, } impl < 'a > clocks
-        < 'a >
+        struct sys_state < 'a > { priority : & 'a Priority, } impl < 'a >
+        sys_state < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { sys_state { priority } } #[inline(always)] pub unsafe fn
+            priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct clocks < 'a >
+        { priority : & 'a Priority, } impl < 'a > clocks < 'a >
         {
             #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
             Self { clocks { priority } } #[inline(always)] pub unsafe fn
@@ -330,11 +354,11 @@
             #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
             Self { brightness_state { priority } } #[inline(always)] pub
             unsafe fn priority(& self) -> & Priority { self . priority }
-        } #[allow(non_camel_case_types)] pub struct sys_state < 'a >
-        { priority : & 'a Priority, } impl < 'a > sys_state < 'a >
+        } #[allow(non_camel_case_types)] pub struct rtc < 'a >
+        { priority : & 'a Priority, } impl < 'a > rtc < 'a >
         {
             #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
-            Self { sys_state { priority } } #[inline(always)] pub unsafe fn
+            Self { rtc { priority } } #[inline(always)] pub unsafe fn
             priority(& self) -> & Priority { self . priority }
         } #[allow(non_camel_case_types)] pub struct max_time < 'a >
         { priority : & 'a Priority, } impl < 'a > max_time < 'a >
@@ -444,9 +468,9 @@
     } #[allow(non_snake_case)] #[doc = "Resources `tick` has access to"] pub
     struct __rtic_internal_tickResources < 'a >
     {
-        pub sys_state : resources :: sys_state < 'a >, pub max_time :
-        resources :: max_time < 'a >, pub disp_call_cnt : resources ::
-        disp_call_cnt < 'a >,
+        pub rtc : resources :: rtc < 'a >, pub sys_state : resources ::
+        sys_state < 'a >, pub max_time : resources :: max_time < 'a >, pub
+        disp_call_cnt : resources :: disp_call_cnt < 'a >,
     } #[allow(non_snake_case)] #[doc = "Hardware task"] pub mod tick
     {
         #[allow(unused_imports)] use crate :: buttons :: * ;
@@ -483,57 +507,6 @@
         Write ; #[allow(unused_imports)] use core :: future :: Future ;
         #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
         super :: __rtic_internal_tickResources as Resources ;
-        #[doc = r" Execution context"] pub struct Context < 'a >
-        {
-            #[doc = r" Resources this task has access to"] pub resources :
-            Resources < 'a >,
-        } impl < 'a > Context < 'a >
-        {
-            #[inline(always)] pub unsafe fn
-            new(priority : & 'a rtic :: export :: Priority) -> Self
-            { Context { resources : Resources :: new(priority), } }
-        }
-    } #[allow(non_snake_case)] #[doc = "Resources `alarm` has access to"] pub
-    struct __rtic_internal_alarmResources < 'a >
-    {
-        pub sys_state : resources :: sys_state < 'a >, pub max_time :
-        resources :: max_time < 'a >,
-    } #[allow(non_snake_case)] #[doc = "Hardware task"] pub mod alarm
-    {
-        #[allow(unused_imports)] use crate :: buttons :: * ;
-        #[allow(unused_imports)] use crate :: pot :: * ;
-        #[allow(unused_imports)] use crate :: ui :: * ;
-        #[allow(unused_imports)] use crate :: types :: * ;
-        #[allow(unused_imports)] use crate :: beep :: * ;
-        #[allow(unused_imports)] use crate :: rtc :: * ;
-        #[allow(unused_imports)] use crate :: states :: * ;
-        #[allow(unused_imports)] use crate :: rtc_util ;
-        #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
-        #[allow(unused_imports)] use stm32f1xx_hal ::
-        {
-            adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
-            {
-                gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
-                { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
-                { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
-                ExtiPin, Analog,
-            }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
-            { I2C1, USART1, ADC1, TIM2 }, i2c ::
-            { BlockingI2c, DutyCycle, Mode }, pwm :: C1, rtc :: Rtc,
-        } ; #[allow(unused_imports)] use dwt_systick_monotonic :: DwtSystick ;
-        #[allow(unused_imports)] use cortex_m :: asm :: delay ;
-        #[allow(unused_imports)] use ssd1306 ::
-        { prelude :: *, Builder, I2CDIBuilder, } ; #[allow(unused_imports)]
-        use embedded_graphics ::
-        {
-            fonts :: Text, pixelcolor :: BinaryColor, prelude :: *, style ::
-            TextStyle,
-        } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
-        #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
-        Write ; #[allow(unused_imports)] use core :: future :: Future ;
-        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
-        super :: __rtic_internal_alarmResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -776,9 +749,10 @@
     #[doc = "Resources `update_display` has access to"] pub struct
     __rtic_internal_update_displayResources < 'a >
     {
-        pub display : resources :: display < 'a >, pub max_time : resources ::
-        max_time < 'a >, pub brightness_state : resources :: brightness_state
-        < 'a >, pub disp_call_cnt : resources :: disp_call_cnt < 'a >,
+        pub rtc : resources :: rtc < 'a >, pub display : resources :: display
+        < 'a >, pub max_time : resources :: max_time < 'a >, pub
+        brightness_state : resources :: brightness_state < 'a >, pub
+        disp_call_cnt : resources :: disp_call_cnt < 'a >,
     } #[allow(non_snake_case)] #[doc = "Software task"] pub mod update_display
     {
         #[allow(unused_imports)] use crate :: buttons :: * ;
@@ -1686,8 +1660,10 @@
         }
     } #[allow(non_snake_case)] #[doc = "Resources `kick_dog` has access to"]
     pub struct __rtic_internal_kick_dogResources < 'a >
-    { pub sys_state : resources :: sys_state < 'a >, }
-    #[allow(non_snake_case)] #[doc = "Software task"] pub mod kick_dog
+    {
+        pub rtc : resources :: rtc < 'a >, pub sys_state : resources ::
+        sys_state < 'a >,
+    } #[allow(non_snake_case)] #[doc = "Software task"] pub mod kick_dog
     {
         #[allow(unused_imports)] use crate :: buttons :: * ;
         #[allow(unused_imports)] use crate :: pot :: * ;
@@ -1912,9 +1888,10 @@
     } #[allow(non_snake_case)] #[doc = "Resources `to_state` has access to"]
     pub struct __rtic_internal_to_stateResources < 'a >
     {
-        pub sys_state : resources :: sys_state < 'a >, pub sleep_pin :
-        resources :: sleep_pin < 'a >, pub max_time : resources :: max_time <
-        'a >, pub disp_call_cnt : resources :: disp_call_cnt < 'a >,
+        pub rtc : resources :: rtc < 'a >, pub sys_state : resources ::
+        sys_state < 'a >, pub sleep_pin : resources :: sleep_pin < 'a >, pub
+        max_time : resources :: max_time < 'a >, pub disp_call_cnt : resources
+        :: disp_call_cnt < 'a >,
     } #[allow(non_snake_case)] #[doc = "Software task"] pub mod to_state
     {
         #[allow(unused_imports)] use crate :: buttons :: * ;
@@ -2138,7 +2115,30 @@
                 }
             }
         }
-    } #[doc = r" app module"] #[allow(non_upper_case_globals)] #[doc(hidden)]
+    } #[doc = r" app module"] impl < 'a > __rtic_internal_idleResources < 'a >
+    {
+        #[inline(always)] pub unsafe fn
+        new(priority : & 'a rtic :: export :: Priority) -> Self
+        {
+            __rtic_internal_idleResources
+            { sys_state : resources :: sys_state :: new(priority), }
+        }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)] static mut
+    __rtic_internal_sys_state : SysState = SysState :: Setup ; impl < 'a >
+    rtic :: Mutex for resources :: sys_state < 'a >
+    {
+        type T = SysState ; #[inline(always)] fn lock < RTIC_INTERNAL_R >
+        (& mut self, f : impl FnOnce(& mut SysState) -> RTIC_INTERNAL_R) ->
+        RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 3u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(& mut __rtic_internal_sys_state, self . priority(),
+                     CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
+            }
+        }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)]
     #[link_section = ".uninit.rtic0"] static mut __rtic_internal_clocks : core
     :: mem :: MaybeUninit < stm32f1xx_hal :: rcc :: Clocks > = core :: mem ::
     MaybeUninit :: uninit() ; impl < 'a > rtic :: Mutex for resources ::
@@ -2252,18 +2252,21 @@
                      NVIC_PRIO_BITS, f,)
             }
         }
-    } #[allow(non_upper_case_globals)] #[doc(hidden)] static mut
-    __rtic_internal_sys_state : SysState = SysState :: Setup ; impl < 'a >
-    rtic :: Mutex for resources :: sys_state < 'a >
+    } #[allow(non_upper_case_globals)] #[doc(hidden)]
+    #[link_section = ".uninit.rtic5"] static mut __rtic_internal_rtc : core ::
+    mem :: MaybeUninit < stm32f1xx_hal :: pac :: RTC > = core :: mem ::
+    MaybeUninit :: uninit() ; impl < 'a > rtic :: Mutex for resources :: rtc <
+    'a >
     {
-        type T = SysState ; #[inline(always)] fn lock < RTIC_INTERNAL_R >
-        (& mut self, f : impl FnOnce(& mut SysState) -> RTIC_INTERNAL_R) ->
-        RTIC_INTERNAL_R
+        type T = stm32f1xx_hal :: pac :: RTC ; #[inline(always)] fn lock <
+        RTIC_INTERNAL_R >
+        (& mut self, f : impl FnOnce(& mut stm32f1xx_hal :: pac :: RTC) ->
+         RTIC_INTERNAL_R) -> RTIC_INTERNAL_R
         {
             #[doc = r" Priority ceiling"] const CEILING : u8 = 3u8 ; unsafe
             {
                 rtic :: export ::
-                lock(& mut __rtic_internal_sys_state, self . priority(),
+                lock(__rtic_internal_rtc . as_mut_ptr(), self . priority(),
                      CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
             }
         }
@@ -2298,7 +2301,7 @@
             }
         }
     } #[allow(non_upper_case_globals)] #[doc(hidden)]
-    #[link_section = ".uninit.rtic5"] static mut __rtic_internal_pot : core ::
+    #[link_section = ".uninit.rtic6"] static mut __rtic_internal_pot : core ::
     mem :: MaybeUninit < PA4 < Analog > > = core :: mem :: MaybeUninit ::
     uninit() ; impl < 'a > rtic :: Mutex for resources :: pot < 'a >
     {
@@ -2315,7 +2318,7 @@
             }
         }
     } #[allow(non_upper_case_globals)] #[doc(hidden)]
-    #[link_section = ".uninit.rtic6"] static mut __rtic_internal_pot_pos :
+    #[link_section = ".uninit.rtic7"] static mut __rtic_internal_pot_pos :
     core :: mem :: MaybeUninit < u16 > = core :: mem :: MaybeUninit ::
     uninit() ; impl < 'a > rtic :: Mutex for resources :: pot_pos < 'a >
     {
@@ -2332,7 +2335,7 @@
             }
         }
     } #[allow(non_upper_case_globals)] #[doc(hidden)]
-    #[link_section = ".uninit.rtic7"] static mut __rtic_internal_adc1 : core
+    #[link_section = ".uninit.rtic8"] static mut __rtic_internal_adc1 : core
     :: mem :: MaybeUninit < Adc < ADC1 > > = core :: mem :: MaybeUninit ::
     uninit() ; impl < 'a > rtic :: Mutex for resources :: adc1 < 'a >
     {
@@ -2363,7 +2366,7 @@
             }
         }
     } #[allow(non_upper_case_globals)] #[doc(hidden)]
-    #[link_section = ".uninit.rtic8"] static mut __rtic_internal_buzzer : core
+    #[link_section = ".uninit.rtic9"] static mut __rtic_internal_buzzer : core
     :: mem :: MaybeUninit < stm32f1xx_hal :: pwm :: PwmChannel < TIM2, C1 > >
     = core :: mem :: MaybeUninit :: uninit() ; impl < 'a > rtic :: Mutex for
     resources :: buzzer < 'a >
@@ -2382,7 +2385,7 @@
             }
         }
     } #[allow(non_upper_case_globals)] #[doc(hidden)]
-    #[link_section = ".uninit.rtic9"] static mut __rtic_internal_sleep_pin :
+    #[link_section = ".uninit.rtic10"] static mut __rtic_internal_sleep_pin :
     core :: mem :: MaybeUninit < PA9 < Output < PushPull > > > = core :: mem
     :: MaybeUninit :: uninit() ; impl < 'a > rtic :: Mutex for resources ::
     sleep_pin < 'a >
@@ -2442,39 +2445,20 @@
         {
             __rtic_internal_tickResources
             {
-                sys_state : resources :: sys_state :: new(priority), max_time
-                : resources :: max_time :: new(priority), disp_call_cnt :
-                resources :: disp_call_cnt :: new(priority),
-            }
-        }
-    } #[allow(non_snake_case)] #[no_mangle] unsafe fn RTCALARM()
-    {
-        const PRIORITY : u8 = 2u8 ; rtic :: export ::
-        run(PRIORITY, ||
-            {
-                crate :: app ::
-                alarm(alarm :: Context ::
-                      new(& rtic :: export :: Priority :: new(PRIORITY)))
-            }) ;
-    } impl < 'a > __rtic_internal_alarmResources < 'a >
-    {
-        #[inline(always)] pub unsafe fn
-        new(priority : & 'a rtic :: export :: Priority) -> Self
-        {
-            __rtic_internal_alarmResources
-            {
-                sys_state : resources :: sys_state :: new(priority), max_time
-                : resources :: max_time :: new(priority),
+                rtc : resources :: rtc :: new(priority), sys_state : resources
+                :: sys_state :: new(priority), max_time : resources ::
+                max_time :: new(priority), disp_call_cnt : resources ::
+                disp_call_cnt :: new(priority),
             }
         }
     } #[doc(hidden)] static mut __rtic_internal_handle_adc_FQ : rtic :: export
     :: SCFQ < rtic :: export :: consts :: U1 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic10"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic11"] #[doc(hidden)] static mut
     __rtic_internal_handle_adc_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 1] = [core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic11"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic12"] #[doc(hidden)] static mut
     __rtic_internal_handle_adc_INPUTS :
     [core :: mem :: MaybeUninit < bool > ; 1] =
     [core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
@@ -2495,12 +2479,12 @@
     } #[doc(hidden)] static mut __rtic_internal_update_display_FQ : rtic ::
     export :: SCFQ < rtic :: export :: consts :: U2 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic12"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic13"] #[doc(hidden)] static mut
     __rtic_internal_update_display_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 2] =
     [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
-     uninit(),] ; #[link_section = ".uninit.rtic13"] #[doc(hidden)] static mut
+     uninit(),] ; #[link_section = ".uninit.rtic14"] #[doc(hidden)] static mut
     __rtic_internal_update_display_INPUTS :
     [core :: mem :: MaybeUninit < ScreenPage > ; 2] =
     [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
@@ -2511,16 +2495,17 @@
         {
             __rtic_internal_update_displayResources
             {
-                display : resources :: display :: new(priority), max_time :
-                resources :: max_time :: new(priority), brightness_state :
-                resources :: brightness_state :: new(priority), disp_call_cnt
-                : resources :: disp_call_cnt :: new(priority),
+                rtc : resources :: rtc :: new(priority), display : resources
+                :: display :: new(priority), max_time : resources :: max_time
+                :: new(priority), brightness_state : resources ::
+                brightness_state :: new(priority), disp_call_cnt : resources
+                :: disp_call_cnt :: new(priority),
             }
         }
     } #[doc(hidden)] static mut __rtic_internal_reset_display_FQ : rtic ::
     export :: SCFQ < rtic :: export :: consts :: U16 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic14"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic15"] #[doc(hidden)] static mut
     __rtic_internal_reset_display_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 10] =
@@ -2530,7 +2515,7 @@
      mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit :: uninit(),
      core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
      uninit(), core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic15"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic16"] #[doc(hidden)] static mut
     __rtic_internal_reset_display_INPUTS :
     [core :: mem :: MaybeUninit < () > ; 10] =
     [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
@@ -2553,11 +2538,11 @@
     } #[doc(hidden)] static mut __rtic_internal_beep_FQ : rtic :: export ::
     SCFQ < rtic :: export :: consts :: U1 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic16"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic17"] #[doc(hidden)] static mut
     __rtic_internal_beep_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 1] = [core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic17"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic18"] #[doc(hidden)] static mut
     __rtic_internal_beep_INPUTS :
     [core :: mem :: MaybeUninit < (u32, u8,) > ; 1] =
     [core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
@@ -2572,11 +2557,11 @@
     } #[doc(hidden)] static mut __rtic_internal_unbeep_FQ : rtic :: export ::
     SCFQ < rtic :: export :: consts :: U1 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic18"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic19"] #[doc(hidden)] static mut
     __rtic_internal_unbeep_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 1] = [core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic19"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic20"] #[doc(hidden)] static mut
     __rtic_internal_unbeep_INPUTS :
     [core :: mem :: MaybeUninit < (u32, u8,) > ; 1] =
     [core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
@@ -2591,11 +2576,11 @@
     } #[doc(hidden)] static mut __rtic_internal_kick_dog_FQ : rtic :: export
     :: SCFQ < rtic :: export :: consts :: U1 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic20"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic21"] #[doc(hidden)] static mut
     __rtic_internal_kick_dog_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 1] = [core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic21"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic22"] #[doc(hidden)] static mut
     __rtic_internal_kick_dog_INPUTS : [core :: mem :: MaybeUninit < () > ; 1]
     = [core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
     __rtic_internal_kick_dogResources < 'a >
@@ -2604,16 +2589,19 @@
         new(priority : & 'a rtic :: export :: Priority) -> Self
         {
             __rtic_internal_kick_dogResources
-            { sys_state : resources :: sys_state :: new(priority), }
+            {
+                rtc : resources :: rtc :: new(priority), sys_state : resources
+                :: sys_state :: new(priority),
+            }
         }
     } #[doc(hidden)] static mut __rtic_internal_to_state_FQ : rtic :: export
     :: SCFQ < rtic :: export :: consts :: U1 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic22"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic23"] #[doc(hidden)] static mut
     __rtic_internal_to_state_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 1] = [core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic23"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic24"] #[doc(hidden)] static mut
     __rtic_internal_to_state_INPUTS :
     [core :: mem :: MaybeUninit < SysState > ; 1] =
     [core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
@@ -2624,10 +2612,11 @@
         {
             __rtic_internal_to_stateResources
             {
-                sys_state : resources :: sys_state :: new(priority), sleep_pin
-                : resources :: sleep_pin :: new(priority), max_time :
-                resources :: max_time :: new(priority), disp_call_cnt :
-                resources :: disp_call_cnt :: new(priority),
+                rtc : resources :: rtc :: new(priority), sys_state : resources
+                :: sys_state :: new(priority), sleep_pin : resources ::
+                sleep_pin :: new(priority), max_time : resources :: max_time
+                :: new(priority), disp_call_cnt : resources :: disp_call_cnt
+                :: new(priority),
             }
         }
     } #[allow(non_camel_case_types)] #[derive(Clone, Copy)] #[doc(hidden)] pub
@@ -2842,9 +2831,10 @@
             > () ; rtic :: export :: assert_send :: < PA9 < Output < PushPull
             > > > () ; rtic :: export :: assert_send :: < stm32f1xx_hal :: pwm
             :: PwmChannel < TIM2, C1 > > () ; rtic :: export :: assert_send ::
-            < bool > () ; rtic :: export :: assert_send :: < ScreenPage > () ;
-            rtic :: export :: assert_send :: < u32 > () ; rtic :: export ::
-            assert_send :: < u8 > () ; rtic :: export :: assert_send :: <
+            < stm32f1xx_hal :: pac :: RTC > () ; rtic :: export :: assert_send
+            :: < bool > () ; rtic :: export :: assert_send :: < ScreenPage >
+            () ; rtic :: export :: assert_send :: < u32 > () ; rtic :: export
+            :: assert_send :: < u8 > () ; rtic :: export :: assert_send :: <
             SysState > () ; rtic :: export :: assert_monotonic :: < DwtSystick
             < 8_000_000 > > () ; rtic :: export :: interrupt :: disable() ;
             (0 .. 1u8) .
@@ -2902,17 +2892,7 @@
                                     NVIC_PRIO_BITS),) ; rtic :: export :: NVIC
             ::
             unmask(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
-                   :: interrupt :: RTC) ; let _ =
-            [() ;
-             ((1 << stm32f1xx_hal :: pac :: NVIC_PRIO_BITS) - 2u8 as usize)] ;
-            core . NVIC .
-            set_priority(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
-                         :: interrupt :: RTCALARM, rtic :: export ::
-                         logical2hw(2u8, stm32f1xx_hal :: pac ::
-                                    NVIC_PRIO_BITS),) ; rtic :: export :: NVIC
-            ::
-            unmask(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
-                   :: interrupt :: RTCALARM) ; __rtic_internal_TQ_MyMono .
+                   :: interrupt :: RTC) ; __rtic_internal_TQ_MyMono .
             as_mut_ptr() . write(rtic :: export :: TimerQueue :: new()) ; let
             _ =
             [() ;
@@ -2938,7 +2918,8 @@
             as_mut_ptr() . write(late . clocks) ; __rtic_internal_display .
             as_mut_ptr() . write(late . display) ; __rtic_internal_pot .
             as_mut_ptr() . write(late . pot) ; __rtic_internal_pot_pos .
-            as_mut_ptr() . write(late . pot_pos) ; __rtic_internal_sleep_pin .
+            as_mut_ptr() . write(late . pot_pos) ; __rtic_internal_rtc .
+            as_mut_ptr() . write(late . rtc) ; __rtic_internal_sleep_pin .
             as_mut_ptr() . write(late . sleep_pin) ; monotonics . 0 . reset()
             ; __rtic_internal_MONOTONIC_STORAGE_MyMono = Some(monotonics . 0)
             ; rtic :: export :: interrupt :: enable() ; crate :: app ::

@@ -100,8 +100,7 @@ mod app {
         pot_pos: u16,
         sleep_pin: PA9<Output<PushPull>>,
         buzzer: stm32f1xx_hal::pwm::PwmChannel<TIM2, C1>,
-        // TODO: Replace This
-        //rtc: Rtc,
+        rtc: stm32f1xx_hal::pac::RTC,
         #[init(0)]
         brightness_state: u8,
         #[init(false)]
@@ -156,6 +155,9 @@ mod app {
         // Split GPIO ports into smaller pin objects
         let mut gpioa = cx.device.GPIOA.split(&mut rcc.apb2);
         let mut gpiob = cx.device.GPIOB.split(&mut rcc.apb2);
+
+        let mut debug_pin = gpioa.pa10.into_push_pull_output(&mut gpioa.crh);
+        debug_pin.set_low().unwrap();
 
         // --------
         // Init RTC
@@ -234,9 +236,8 @@ mod app {
         });
 
         rtc_util::set_time(&mut rtc, 0);
-        rtc_util::set_alarm(&mut rtc, SLEEP_TIME as u32);
-        rtc_util::listen_alarm(&mut rtc);
-        rtc_util::unlisten_seconds(&mut rtc);
+        rtc_util::unlisten_alarm(&mut rtc);
+        rtc_util::listen_seconds(&mut rtc);
         rtc_util::clear_alarm_flag(&mut rtc);
         rtc_util::clear_second_flag(&mut rtc);
 
@@ -320,6 +321,8 @@ mod app {
         let interface = I2CDIBuilder::new().init(i2c);
         // Create display in graphics mode (as opposed to terminal mode)
         let mut display: GraphicsMode<_, _> = Builder::new().connect(interface).into();
+        // Small arbitrary delay so clocks can warm up
+        delay(1_000_000);
         // Init display
         display.init().unwrap();
         display.clear();
@@ -327,7 +330,7 @@ mod app {
         // Read initial ADC value
         let _ = handle_adc::spawn(true);
         // Do startup beep
-        //let _ = beep::spawn(70, 2);
+        let _ = beep::spawn(70, 2);
         // Show boot message
         let _ = update_display::spawn(ScreenPage::Boot);
 
@@ -342,18 +345,23 @@ mod app {
             pot_pos,
             sleep_pin,
             buzzer,
-            //rtc,
+            rtc,
         },
          // Return timer object so RTIC can use it for task scheduling.
          init::Monotonics(mono))
     }
 
     // Idle task, run when nothing else is happening. This is where polling happens.
-    #[idle]
-    fn idle(_cx: idle::Context) -> ! {
+    #[idle(resources = [sys_state])]
+    fn idle(cx: idle::Context) -> ! {
+        let mut sys_state = cx.resources.sys_state;
         loop {
             // Read off the ADC value
-            let _ = handle_adc::spawn(false);
+            sys_state.lock(|sys_state| {
+                if *sys_state != SysState::Timer {
+                    let _ = handle_adc::spawn(false);
+                }
+            });
         }
     }
 
@@ -363,8 +371,7 @@ mod app {
         fn handle_buttons(cx: handle_buttons::Context);
         #[task(resources = [pot, pot_pos, adc1, pot_dir, max_time], priority=1)]
         fn handle_adc(cx: handle_adc::Context, silent:bool);
-        // TODO: Add RTC permission
-        #[task(resources = [display, max_time, brightness_state, disp_call_cnt], priority=1, capacity=2)]
+        #[task(resources = [rtc, display, max_time, brightness_state, disp_call_cnt], priority=1, capacity=2)]
         fn update_display(cx: update_display::Context, screen_type:ScreenPage);
         #[task(resources = [disp_call_cnt, sys_state], priority=1, capacity=10)]
         fn reset_display(cx: reset_display::Context);
@@ -372,17 +379,11 @@ mod app {
         fn beep(cx: beep::Context, length: u32, count: u8);
         #[task(resources = [buzzer], priority=1, capacity=1)]
         fn unbeep(cx: unbeep::Context, length: u32, count: u8);
-        // TODO: Add RTC permission
-        #[task(binds = RTC, resources = [sys_state, max_time, disp_call_cnt], priority=2)]
+        #[task(binds = RTC, resources = [rtc, sys_state, max_time, disp_call_cnt], priority=2)]
         fn tick(cx: tick::Context);
-        // TODO: Add RTC permission
-        #[task(binds = RTCALARM, resources = [sys_state, max_time], priority=2)]
-        fn alarm(cx: alarm::Context);
-        // TODO: Add RTC permission
-        #[task(resources = [sys_state], priority=3, capacity=1)]
+        #[task(resources = [rtc, sys_state], priority=3, capacity=1)]
         fn kick_dog(cx: kick_dog::Context);
-        // TODO: Add RTC permission
-        #[task(resources = [sys_state, sleep_pin, max_time, disp_call_cnt], priority=3, capacity=1)]
+        #[task(resources = [rtc, sys_state, sleep_pin, max_time, disp_call_cnt], priority=3, capacity=1)]
         fn to_state(cx: to_state::Context, target: SysState);
     }
 }

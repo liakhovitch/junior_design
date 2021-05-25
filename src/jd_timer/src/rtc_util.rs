@@ -81,7 +81,8 @@ pub fn unlisten_alarm(rtc: &mut RTC) {
 // Reads the current counter
 pub fn current_time(rtc: &mut RTC) -> u32 {
     // Wait for the APB1 interface to be ready
-    while (*rtc).crl.read().rsf().bit() {}
+    //rtc_write(rtc, |rtc| (*rtc).crl.modify(|_, w| w.rsf().clear_bit()));
+    //while (*rtc).crl.read().rsf().bit() {}
 
     (*rtc).cnth.read().bits() << 16 | (*rtc).cntl.read().bits()
 }

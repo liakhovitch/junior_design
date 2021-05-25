@@ -1,6 +1,8 @@
 use crate::app;
 use crate::app::*;
 use crate::types::{ScreenPage, SysState};
+use crate::rtc_util;
+use crate::config::SLEEP_TIME;
 
 use rtic::Mutex;
 
@@ -10,57 +12,58 @@ use stm32f1xx_hal::{
 };
 
 pub fn tick(cx: tick::Context) {
-    // TODO: Add RTC
     let (mut sys_state, mut max_time) =
         (cx.resources.sys_state, cx.resources.max_time);
     let mut disp_call_cnt = cx.resources.disp_call_cnt;
-    // TODO: Replace this
-    //rtc.lock(|rtc|{rtc.clear_second_flag()});
+    let mut rtc = cx.resources.rtc;
     sys_state.lock(|sys_state|{
         match sys_state {
             SysState::Setup => {
-                // This should never happen
+                let current_time:u16 = rtc.lock(|rtc|{
+                    return rtc_util::current_time(rtc) as u16;
+                });
+                if current_time >= SLEEP_TIME {
+                    let _ = to_state::spawn(SysState::Sleep);
+                }
             }
             SysState::Timer => {
-                let cnt:u8 = disp_call_cnt.lock(|disp_call_cnt|{
-                    return *disp_call_cnt;
+                let current_time:u16 = rtc.lock(|rtc|{
+                    return rtc_util::current_time(rtc) as u16;
                 });
-                if cnt == 0 {
-                    let _ = update_display::spawn(ScreenPage::Timer);
+                let maximum_time:u16 = max_time.lock(|max_time|{return *max_time});
+                if current_time < maximum_time {
+                    let cnt:u8 = disp_call_cnt.lock(|disp_call_cnt|{
+                        return *disp_call_cnt;
+                    });
+                    if cnt == 0 {
+                        let _ = update_display::spawn(ScreenPage::Timer);
+                    }
+                } else {
+                    let _ = update_display::spawn(ScreenPage::Alarm);
+                    let _ = beep::spawn(500, 5);
+                    let _ = to_state::spawn(SysState::Setup);
                 }
+
             }
             SysState::Sleep => {
                 // This should never happen
             }
         }
     });
-}
-
-pub fn alarm(cx: alarm::Context) {
-    // TODO: Add RTC
-    let (mut sys_state, mut max_time) =
-        (cx.resources.sys_state, cx.resources.max_time);
-    // TODO: Replace this
-    /*rtc.lock(|rtc|{
-        rtc.clear_alarm_flag();
-        rtc.clear_second_flag();
-    });*/
-    sys_state.lock(|sys_state|{
-        return;
-    });
+    rtc.lock(|rtc|{rtc_util::clear_second_flag(rtc)});
 }
 
 pub fn kick_dog(cx: kick_dog::Context) {
     let mut sys_state =
         cx.resources.sys_state;
+    let mut rtc = cx.resources.rtc;
     sys_state.lock(|sys_state|{
         match sys_state {
             SysState::Setup => {
-                // TODO: Replace this
-                /*rtc.lock(|rtc|{
+                rtc.lock(|rtc|{
                     // Put off sleep timer when user interacts with device
-                    rtc.set_time(0);
-                });*/
+                    rtc_util::set_time(rtc,0);
+                });
             }
             SysState::Timer => {
                 // Nothing to do

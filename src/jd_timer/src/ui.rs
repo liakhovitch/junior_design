@@ -31,7 +31,8 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
         (cx.resources.display, cx.resources.brightness_state);
     let mut max_time = cx.resources.max_time;
     let mut disp_call_cnt = cx.resources.disp_call_cnt;
-    let mut rtc = cx.resources.rtc;
+    // TODO: Replace this
+    //let mut rtc = cx.resources.rtc;
 
     display.lock(|display| {
         match screen_type {
@@ -78,17 +79,18 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
             // Display the countdown screen
             ScreenPage::Timer => {
                 disp_call_cnt.lock(|disp_call_cnt|{*disp_call_cnt = 0});
-
-                let time_remaining: u16 = rtc.lock(|rtc| {
-                    return max_time.lock(|max_time|{
-                        let current_time = rtc.current_time() as u16;
-                        if current_time <= *max_time {
-                            return *max_time - current_time
-                        } else {
-                            return 0
-                        }
-                    });
-                });
+                // TODO: Replace this
+                let time_remaining: u16 =0;
+                    /*let time_remaining: u16 = rtc.lock(|rtc| {
+                        return max_time.lock(|max_time|{
+                            let current_time = rtc.current_time() as u16;
+                            if current_time <= *max_time {
+                                return *max_time - current_time
+                            } else {
+                                return 0
+                            }
+                        });
+                    });*/
                 display.clear();
                 // Format the text
                 let mut data = String::<U16>::from("");

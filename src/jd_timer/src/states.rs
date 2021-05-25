@@ -18,8 +18,9 @@ use embedded_hal::digital::v2::OutputPin;
 
 pub fn to_state(cx: to_state::Context, target: SysState){
     // Bring resources into scope
-    let (mut rtc, mut sys_state, mut sleep_pin) =
-        (cx.resources.rtc, cx.resources.sys_state, cx.resources.sleep_pin);
+    // TODO: Add RTC
+    let (mut sys_state, mut sleep_pin) =
+        (cx.resources.sys_state, cx.resources.sleep_pin);
     let mut max_time = cx.resources.max_time;
     let mut disp_call_cnt = cx.resources.disp_call_cnt;
     // Acquire display status message status
@@ -27,7 +28,8 @@ pub fn to_state(cx: to_state::Context, target: SysState){
         return *disp_call_cnt;
     });
     // Acquire resource locks
-    rtc.lock(|rtc|{
+    //TODO: Replace this
+    //rtc.lock(|rtc|{
     sys_state.lock(|sys_state|{
     sleep_pin.lock(|sleep_pin|{
         match target {
@@ -35,14 +37,14 @@ pub fn to_state(cx: to_state::Context, target: SysState){
                 // Set new system state
                 *sys_state = SysState::Setup;
                 // Reset RTC
-                rtc.set_time(0);
+                //rtc.set_time(0);
                 // Set RTC alarm to trigger when it's time to sleep
-                rtc.set_alarm(SLEEP_TIME as u32);
+                //rtc.set_alarm(SLEEP_TIME as u32);
                 // Configure RTC for use as sleep timer
-                rtc.listen_alarm();
-                rtc.unlisten_seconds();
-                rtc.clear_alarm_flag();
-                rtc.clear_second_flag();
+                //rtc.listen_alarm();
+                //rtc.unlisten_seconds();
+                //rtc.clear_alarm_flag();
+                //rtc.clear_second_flag();
                 // Make sure we aren't shutting off
                 sleep_pin.set_high().unwrap();
                 // Update the display, unless there's a status message being shown
@@ -54,16 +56,16 @@ pub fn to_state(cx: to_state::Context, target: SysState){
                 // Set new system state
                 *sys_state = SysState::Timer;
                 // Reset RTC
-                rtc.set_time(0);
+                //rtc.set_time(0);
                 max_time.lock(|max_time| {
                     // Set RTC alarm to trigger when timer runs out
-                    rtc.set_alarm(*max_time as u32);
+                    //rtc.set_alarm(*max_time as u32);
                 });
                 // Configure RTC for use as egg timer
-                rtc.listen_alarm();
-                rtc.listen_seconds();
-                rtc.clear_alarm_flag();
-                rtc.clear_second_flag();
+                //rtc.listen_alarm();
+                //rtc.listen_seconds();
+                //rtc.clear_alarm_flag();
+                //rtc.clear_second_flag();
                 // Make sure we aren't shutting off
                 sleep_pin.set_high().unwrap();
                 // Update the display
@@ -73,10 +75,10 @@ pub fn to_state(cx: to_state::Context, target: SysState){
                 // Update system state
                 *sys_state = SysState::Sleep;
                 // Shut off RTC alarms
-                rtc.unlisten_alarm();
-                rtc.unlisten_seconds();
-                rtc.clear_alarm_flag();
-                rtc.clear_second_flag();
+                //rtc.unlisten_alarm();
+                //rtc.unlisten_seconds();
+                //rtc.clear_alarm_flag();
+                //rtc.clear_second_flag();
                 // Tell PMIC to shut us off
                 sleep_pin.set_low().unwrap();
                 // Show sleep message on display
@@ -85,5 +87,7 @@ pub fn to_state(cx: to_state::Context, target: SysState){
                 }
             }
         }
-    });});});
+    });});
+    // TODO: Replace this
+    //});
 }

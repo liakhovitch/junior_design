@@ -10,10 +10,12 @@ use stm32f1xx_hal::{
 };
 
 pub fn tick(cx: tick::Context) {
-    let (mut rtc, mut sys_state, mut max_time) =
-        (cx.resources.rtc, cx.resources.sys_state, cx.resources.max_time);
+    // TODO: Add RTC
+    let (mut sys_state, mut max_time) =
+        (cx.resources.sys_state, cx.resources.max_time);
     let mut disp_call_cnt = cx.resources.disp_call_cnt;
-    rtc.lock(|rtc|{rtc.clear_second_flag()});
+    // TODO: Replace this
+    //rtc.lock(|rtc|{rtc.clear_second_flag()});
     sys_state.lock(|sys_state|{
         match sys_state {
             SysState::Setup => {
@@ -35,27 +37,30 @@ pub fn tick(cx: tick::Context) {
 }
 
 pub fn alarm(cx: alarm::Context) {
-    let (mut rtc, mut sys_state, mut max_time) =
-        (cx.resources.rtc, cx.resources.sys_state, cx.resources.max_time);
-    rtc.lock(|rtc|{
+    // TODO: Add RTC
+    let (mut sys_state, mut max_time) =
+        (cx.resources.sys_state, cx.resources.max_time);
+    // TODO: Replace this
+    /*rtc.lock(|rtc|{
         rtc.clear_alarm_flag();
         rtc.clear_second_flag();
-    });
+    });*/
     sys_state.lock(|sys_state|{
         return;
     });
 }
 
 pub fn kick_dog(cx: kick_dog::Context) {
-    let (mut rtc, mut sys_state) =
-        (cx.resources.rtc, cx.resources.sys_state);
+    let (mut sys_state) =
+        (cx.resources.sys_state);
     sys_state.lock(|sys_state|{
         match sys_state {
             SysState::Setup => {
-                rtc.lock(|rtc|{
+                // TODO: Replace this
+                /*rtc.lock(|rtc|{
                     // Put off sleep timer when user interacts with device
                     rtc.set_time(0);
-                });
+                });*/
             }
             SysState::Timer => {
                 // Nothing to do

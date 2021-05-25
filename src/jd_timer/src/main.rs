@@ -94,7 +94,8 @@ mod app {
         pot_pos: u16,
         sleep_pin: PA9<Output<PushPull>>,
         buzzer: stm32f1xx_hal::pwm::PwmChannel<TIM2, C1>,
-        rtc: Rtc,
+        // TODO: Replace This
+        //rtc: Rtc,
         #[init(0)]
         brightness_state: u8,
         #[init(false)]
@@ -184,14 +185,15 @@ mod app {
         // --------
         // Init RTC
         // --------
-        let mut rtc = Rtc::rtc(cx.device.RTC, &mut backup_domain);
+        // TODO: Replace This
+        /*let mut rtc = Rtc::rtc(cx.device.RTC, &mut backup_domain);
         rtc.select_frequency(1.hz());
         rtc.set_time(0);
         rtc.set_alarm(SLEEP_TIME as u32);
         rtc.listen_alarm();
         rtc.unlisten_seconds();
         rtc.clear_alarm_flag();
-        rtc.clear_second_flag();
+        rtc.clear_second_flag();*/
 
         // ------------
         // Init buzzer
@@ -254,7 +256,7 @@ mod app {
             pot_pos,
             sleep_pin,
             buzzer,
-            rtc,
+            //rtc,
         },
          // Return timer object so RTIC can use it for task scheduling.
          init::Monotonics(mono))
@@ -275,7 +277,8 @@ mod app {
         fn handle_buttons(cx: handle_buttons::Context);
         #[task(resources = [pot, pot_pos, adc1, pot_dir, max_time], priority=1)]
         fn handle_adc(cx: handle_adc::Context, silent:bool);
-        #[task(resources = [display, max_time, brightness_state, disp_call_cnt, rtc], priority=1, capacity=2)]
+        // TODO: Add RTC permission
+        #[task(resources = [display, max_time, brightness_state, disp_call_cnt], priority=1, capacity=2)]
         fn update_display(cx: update_display::Context, screen_type:ScreenPage);
         #[task(resources = [disp_call_cnt, sys_state], priority=1, capacity=10)]
         fn reset_display(cx: reset_display::Context);
@@ -283,13 +286,17 @@ mod app {
         fn beep(cx: beep::Context, length: u32, count: u8);
         #[task(resources = [buzzer], priority=1, capacity=1)]
         fn unbeep(cx: unbeep::Context, length: u32, count: u8);
-        #[task(binds = RTC, resources = [rtc, sys_state, max_time, disp_call_cnt], priority=2)]
+        // TODO: Add RTC permission
+        #[task(binds = RTC, resources = [sys_state, max_time, disp_call_cnt], priority=2)]
         fn tick(cx: tick::Context);
-        #[task(binds = RTCALARM, resources = [rtc, sys_state, max_time], priority=2)]
+        // TODO: Add RTC permission
+        #[task(binds = RTCALARM, resources = [sys_state, max_time], priority=2)]
         fn alarm(cx: alarm::Context);
-        #[task(resources = [rtc, sys_state], priority=3, capacity=1)]
+        // TODO: Add RTC permission
+        #[task(resources = [sys_state], priority=3, capacity=1)]
         fn kick_dog(cx: kick_dog::Context);
-        #[task(resources = [rtc, sys_state, sleep_pin, max_time, disp_call_cnt], priority=3, capacity=1)]
+        // TODO: Add RTC permission
+        #[task(resources = [sys_state, sleep_pin, max_time, disp_call_cnt], priority=3, capacity=1)]
         fn to_state(cx: to_state::Context, target: SysState);
     }
 }

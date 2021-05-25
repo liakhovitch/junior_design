@@ -18,6 +18,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
             {
@@ -40,9 +41,9 @@
                 :: TextStyle,
             } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr
-            :: write_volatile ; #[allow(unused_imports)] use core :: fmt ::
-            Write ; #[allow(unused_imports)] use core :: future :: Future ;
+            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
+            :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
+            #[allow(unused_imports)] use core :: ptr :: * ;
             #[doc = r" Read the current time from this monotonic"] pub fn
             now() -> rtic :: time :: Instant < DwtSystick < 8_000_000 > >
             {
@@ -73,8 +74,8 @@
         }
     } use crate :: buttons :: * ; use crate :: pot :: * ; use crate :: ui :: *
     ; use crate :: types :: * ; use crate :: beep :: * ; use crate :: rtc :: *
-    ; use crate :: states :: * ; use crate :: config :: { SLEEP_TIME } ; use
-    stm32f1xx_hal ::
+    ; use crate :: states :: * ; use crate :: rtc_util ; use crate :: config
+    :: { SLEEP_TIME } ; use stm32f1xx_hal ::
     {
         adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
         {
@@ -92,8 +93,8 @@
         fonts :: Text, pixelcolor :: BinaryColor, prelude :: *, style ::
         TextStyle,
     } ; use profont :: ProFont24Point ; use embedded_hal :: digital :: v2 ::
-    { OutputPin, InputPin } ; use core :: ptr :: write_volatile ; use core ::
-    fmt :: Write ; use core :: future :: Future ;
+    { OutputPin, InputPin } ; use core :: fmt :: Write ; use core :: future ::
+    Future ; use core :: ptr :: * ;
     #[doc = r" User code from within the module"] type MyMono = DwtSystick <
     8_000_000 > ; #[doc = r" User code end"] #[allow(non_snake_case)] fn
     init(cx : init :: Context) -> (init :: LateResources, init :: Monotonics)
@@ -101,12 +102,43 @@
         let mut core = cx . core ; core . DWT . enable_cycle_counter() ; let
         mut rcc = cx . device . RCC . constrain() ; let mut flash = cx .
         device . FLASH . constrain() ; let mut afio = cx . device . AFIO .
-        constrain(& mut rcc . apb2) ; let mut pwr = cx . device . PWR ; let
-        bkp = cx . device . BKP ; let mut backup_domain = rcc . bkp .
-        constrain(bkp, & mut rcc . apb1, & mut pwr) ; let clocks = rcc . cfgr
-        . freeze(& mut flash . acr) ; let mut gpioa = cx . device . GPIOA .
+        constrain(& mut rcc . apb2) ; let clocks = rcc . cfgr .
+        freeze(& mut flash . acr) ; let mut gpioa = cx . device . GPIOA .
         split(& mut rcc . apb2) ; let mut gpiob = cx . device . GPIOB .
-        split(& mut rcc . apb2) ; let mono = DwtSystick ::
+        split(& mut rcc . apb2) ; let mut pwr = cx . device . PWR ; let mut
+        bkp = cx . device . BKP ; let mut rtc = cx . device . RTC ; let mut
+        lsi_hertz : u32 = 30_000 ; unsafe
+        {
+            let pwr_ptr : * mut u32 = stm32f1xx_hal :: pac :: PWR :: ptr() as
+            * mut u32 ; let rcc_ptr : * mut u32 = stm32f1xx_hal :: pac :: RCC
+            :: ptr() as * mut u32 ; let apb1enr_ptr : * mut u32 = rcc_ptr .
+            offset(7) ; let mut apb1enr_temp : u32 =
+            read_volatile(apb1enr_ptr) ; apb1enr_temp |= 1 << 27 ;
+            apb1enr_temp |= 1 << 28 ;
+            write_volatile(apb1enr_ptr, apb1enr_temp) ; let rcc_csr_ptr : *
+            mut u32 = rcc_ptr . offset(9) ; let mut rcc_csr_temp : u32 =
+            read_volatile(rcc_csr_ptr) ; rcc_csr_temp |= 1 << 0 ;
+            write_volatile(rcc_csr_ptr, rcc_csr_temp) ; let pwr_cr_ptr : * mut
+            u32 = pwr_ptr . offset(0) ; let mut pwr_cr_temp : u32 =
+            read_volatile(pwr_cr_ptr) ; pwr_cr_temp |= 1 << 8 ;
+            write_volatile(pwr_cr_ptr, pwr_cr_temp) ; let rcc_bdcr_ptr : * mut
+            u32 = rcc_ptr . offset(8) ; let mut rcc_bdcr_temp : u32 =
+            read_volatile(rcc_bdcr_ptr) ; rcc_bdcr_temp |= 1 << 15 ;
+            rcc_bdcr_temp |= 0b10 << 8 ;
+            write_volatile(rcc_bdcr_ptr, rcc_bdcr_temp) ;
+        } let prescaler = (lsi_hertz / 1) - 1 ; rtc_util ::
+        rtc_write(& mut rtc, | rtc |
+                  {
+                      rtc . prlh .
+                      write(| w | unsafe { w . bits(prescaler >> 16) }) ; rtc
+                      . prll .
+                      write(| w | unsafe
+                            { w . bits(prescaler as u16 as u32) }) ;
+                  }) ; rtc_util :: set_time(& mut rtc, 0) ; rtc_util ::
+        set_alarm(& mut rtc, SLEEP_TIME as u32) ; rtc_util ::
+        listen_alarm(& mut rtc) ; rtc_util :: unlisten_seconds(& mut rtc) ;
+        rtc_util :: clear_alarm_flag(& mut rtc) ; rtc_util ::
+        clear_second_flag(& mut rtc) ; let mono = DwtSystick ::
         new(& mut core . DCB, core . DWT, core . SYST, 8_000_000) ; let mut
         button_start = gpiob . pb5 . into_pull_up_input(& mut gpiob . crl) ;
         button_start . make_interrupt_source(& mut afio) ; button_start .
@@ -158,6 +190,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
@@ -180,9 +213,9 @@
             TextStyle,
         } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
-        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
-        #[allow(unused_imports)] use core :: future :: Future ;
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
+        Write ; #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use core :: ptr :: * ;
         #[doc = r" Resources initialized at runtime"] #[allow(non_snake_case)]
         pub struct LateResources
         {
@@ -225,6 +258,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
@@ -247,9 +281,9 @@
             TextStyle,
         } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
-        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
-        #[allow(unused_imports)] use core :: future :: Future ;
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
+        Write ; #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use core :: ptr :: * ;
         #[doc = r" Execution context"] pub struct Context < > { } impl < >
         Context < >
         {
@@ -370,6 +404,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
@@ -392,11 +427,11 @@
             TextStyle,
         } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
-        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
-        #[allow(unused_imports)] use core :: future :: Future ; #[doc(inline)]
-        pub use super :: __rtic_internal_handle_buttonsResources as Resources
-        ; #[doc = r" Execution context"] pub struct Context < 'a >
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
+        Write ; #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
+        super :: __rtic_internal_handle_buttonsResources as Resources ;
+        #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
             Resources < 'a >,
@@ -421,6 +456,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
@@ -443,10 +479,10 @@
             TextStyle,
         } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
-        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
-        #[allow(unused_imports)] use core :: future :: Future ; #[doc(inline)]
-        pub use super :: __rtic_internal_tickResources as Resources ;
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
+        Write ; #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
+        super :: __rtic_internal_tickResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -471,6 +507,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
@@ -493,10 +530,10 @@
             TextStyle,
         } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
-        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
-        #[allow(unused_imports)] use core :: future :: Future ; #[doc(inline)]
-        pub use super :: __rtic_internal_alarmResources as Resources ;
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
+        Write ; #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
+        super :: __rtic_internal_alarmResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -522,6 +559,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
@@ -544,10 +582,10 @@
             TextStyle,
         } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
-        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
-        #[allow(unused_imports)] use core :: future :: Future ; #[doc(inline)]
-        pub use super :: __rtic_internal_handle_adcResources as Resources ;
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
+        Write ; #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
+        super :: __rtic_internal_handle_adcResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -592,6 +630,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
             {
@@ -614,11 +653,10 @@
                 :: TextStyle,
             } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr
-            :: write_volatile ; #[allow(unused_imports)] use core :: fmt ::
-            Write ; #[allow(unused_imports)] use core :: future :: Future ;
-            pub struct SpawnHandle { #[doc(hidden)] marker : u32, } impl
-            SpawnHandle
+            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
+            :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
+            #[allow(unused_imports)] use core :: ptr :: * ; pub struct
+            SpawnHandle { #[doc(hidden)] marker : u32, } impl SpawnHandle
             {
                 pub fn cancel(self) -> Result < bool, () >
                 {
@@ -750,6 +788,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
@@ -772,11 +811,11 @@
             TextStyle,
         } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
-        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
-        #[allow(unused_imports)] use core :: future :: Future ; #[doc(inline)]
-        pub use super :: __rtic_internal_update_displayResources as Resources
-        ; #[doc = r" Execution context"] pub struct Context < 'a >
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
+        Write ; #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
+        super :: __rtic_internal_update_displayResources as Resources ;
+        #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
             Resources < 'a >,
@@ -820,6 +859,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
             {
@@ -842,11 +882,10 @@
                 :: TextStyle,
             } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr
-            :: write_volatile ; #[allow(unused_imports)] use core :: fmt ::
-            Write ; #[allow(unused_imports)] use core :: future :: Future ;
-            pub struct SpawnHandle { #[doc(hidden)] marker : u32, } impl
-            SpawnHandle
+            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
+            :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
+            #[allow(unused_imports)] use core :: ptr :: * ; pub struct
+            SpawnHandle { #[doc(hidden)] marker : u32, } impl SpawnHandle
             {
                 pub fn cancel(self) -> Result < ScreenPage, () >
                 {
@@ -978,6 +1017,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
@@ -1000,10 +1040,10 @@
             TextStyle,
         } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
-        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
-        #[allow(unused_imports)] use core :: future :: Future ; #[doc(inline)]
-        pub use super :: __rtic_internal_reset_displayResources as Resources ;
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
+        Write ; #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
+        super :: __rtic_internal_reset_displayResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -1048,6 +1088,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
             {
@@ -1070,11 +1111,10 @@
                 :: TextStyle,
             } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr
-            :: write_volatile ; #[allow(unused_imports)] use core :: fmt ::
-            Write ; #[allow(unused_imports)] use core :: future :: Future ;
-            pub struct SpawnHandle { #[doc(hidden)] marker : u32, } impl
-            SpawnHandle
+            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
+            :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
+            #[allow(unused_imports)] use core :: ptr :: * ; pub struct
+            SpawnHandle { #[doc(hidden)] marker : u32, } impl SpawnHandle
             {
                 pub fn cancel(self) -> Result < (), () >
                 {
@@ -1202,6 +1242,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
@@ -1224,10 +1265,10 @@
             TextStyle,
         } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
-        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
-        #[allow(unused_imports)] use core :: future :: Future ; #[doc(inline)]
-        pub use super :: __rtic_internal_beepResources as Resources ;
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
+        Write ; #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
+        super :: __rtic_internal_beepResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -1272,6 +1313,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
             {
@@ -1294,11 +1336,10 @@
                 :: TextStyle,
             } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr
-            :: write_volatile ; #[allow(unused_imports)] use core :: fmt ::
-            Write ; #[allow(unused_imports)] use core :: future :: Future ;
-            pub struct SpawnHandle { #[doc(hidden)] marker : u32, } impl
-            SpawnHandle
+            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
+            :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
+            #[allow(unused_imports)] use core :: ptr :: * ; pub struct
+            SpawnHandle { #[doc(hidden)] marker : u32, } impl SpawnHandle
             {
                 pub fn cancel(self) -> Result < (u32, u8,), () >
                 {
@@ -1428,6 +1469,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
@@ -1450,10 +1492,10 @@
             TextStyle,
         } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
-        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
-        #[allow(unused_imports)] use core :: future :: Future ; #[doc(inline)]
-        pub use super :: __rtic_internal_unbeepResources as Resources ;
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
+        Write ; #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
+        super :: __rtic_internal_unbeepResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -1498,6 +1540,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
             {
@@ -1520,11 +1563,10 @@
                 :: TextStyle,
             } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr
-            :: write_volatile ; #[allow(unused_imports)] use core :: fmt ::
-            Write ; #[allow(unused_imports)] use core :: future :: Future ;
-            pub struct SpawnHandle { #[doc(hidden)] marker : u32, } impl
-            SpawnHandle
+            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
+            :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
+            #[allow(unused_imports)] use core :: ptr :: * ; pub struct
+            SpawnHandle { #[doc(hidden)] marker : u32, } impl SpawnHandle
             {
                 pub fn cancel(self) -> Result < (u32, u8,), () >
                 {
@@ -1654,6 +1696,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
@@ -1676,10 +1719,10 @@
             TextStyle,
         } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
-        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
-        #[allow(unused_imports)] use core :: future :: Future ; #[doc(inline)]
-        pub use super :: __rtic_internal_kick_dogResources as Resources ;
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
+        Write ; #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
+        super :: __rtic_internal_kick_dogResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -1724,6 +1767,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
             {
@@ -1746,11 +1790,10 @@
                 :: TextStyle,
             } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr
-            :: write_volatile ; #[allow(unused_imports)] use core :: fmt ::
-            Write ; #[allow(unused_imports)] use core :: future :: Future ;
-            pub struct SpawnHandle { #[doc(hidden)] marker : u32, } impl
-            SpawnHandle
+            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
+            :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
+            #[allow(unused_imports)] use core :: ptr :: * ; pub struct
+            SpawnHandle { #[doc(hidden)] marker : u32, } impl SpawnHandle
             {
                 pub fn cancel(self) -> Result < (), () >
                 {
@@ -1881,6 +1924,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
         {
@@ -1903,10 +1947,10 @@
             TextStyle,
         } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr ::
-        write_volatile ; #[allow(unused_imports)] use core :: fmt :: Write ;
-        #[allow(unused_imports)] use core :: future :: Future ; #[doc(inline)]
-        pub use super :: __rtic_internal_to_stateResources as Resources ;
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
+        Write ; #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
+        super :: __rtic_internal_to_stateResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -1951,6 +1995,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
             {
@@ -1973,11 +2018,10 @@
                 :: TextStyle,
             } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
-            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: ptr
-            :: write_volatile ; #[allow(unused_imports)] use core :: fmt ::
-            Write ; #[allow(unused_imports)] use core :: future :: Future ;
-            pub struct SpawnHandle { #[doc(hidden)] marker : u32, } impl
-            SpawnHandle
+            { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
+            :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
+            #[allow(unused_imports)] use core :: ptr :: * ; pub struct
+            SpawnHandle { #[doc(hidden)] marker : u32, } impl SpawnHandle
             {
                 pub fn cancel(self) -> Result < SysState, () >
                 {

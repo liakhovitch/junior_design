@@ -12,6 +12,7 @@ mod types;
 mod config;
 mod logo;
 mod states;
+mod rtc_util;
 
 #[rtic::app(device = stm32f1xx_hal::pac,
 peripherals = true, dispatchers = [DMA1_CHANNEL1,DMA1_CHANNEL2,DMA1_CHANNEL3])]
@@ -25,6 +26,7 @@ mod app {
     use crate::beep::*;
     use crate::rtc::*;
     use crate::states::*;
+    use crate::rtc_util;
 
     use crate::config::{SLEEP_TIME};
 
@@ -69,14 +71,18 @@ mod app {
 
     // Import peripheral control methods from general HAL definition
     use embedded_hal::digital::v2::{OutputPin, InputPin};
-    use core::ptr::write_volatile;
 
     use core::fmt::Write;
     use core::future::Future;
+    use core::ptr::*;
 
     // Declare type for monotonic timer used by RTIC for task scheduling
     #[monotonic(binds = SysTick, default = true)]
     type MyMono = DwtSystick<8_000_000>; // 8 MHz
+
+ /*   struct RtcRegs {
+
+}*/
 
     // Resources shared by all handlers.
     // All resourced not initialized here by macros are initialized in [init] and returned to RTIC
@@ -116,6 +122,12 @@ mod app {
     // Init function initializes resources and returns them to RTIC via the LateResources object.
     fn init(cx: init::Context) -> (init::LateResources,init::Monotonics){
 
+        // Enable writing to backup domain and power registers so we can later configure RTC.
+        // This must be done before the HAL initializes because the HAL takes ownership of the
+        //   APB1ENR register and only allows access from within the library. NOTE: this code
+        //   is extremely unstable and may stop working if a later version of the HAL starts
+        //   overwriting these bits in this register.
+
         // Enable cycle counter
         let mut core = cx.core;
         core.DWT.enable_cycle_counter();
@@ -125,10 +137,13 @@ mod app {
         let mut flash = cx.device.FLASH.constrain();
         // Take ownership of AFIO register
         let mut afio = cx.device.AFIO.constrain(&mut rcc.apb2);
-        // Take ownership of backup domain
-        let mut pwr = cx.device.PWR;
-        let bkp = cx.device.BKP;
-        let mut backup_domain = rcc.bkp.constrain(bkp, &mut rcc.apb1, &mut pwr);
+
+        //let mut backup_domain = rcc.bkp.constrain(bkp, &mut rcc.apb1, &mut pwr);
+        /*
+        cx.device.RCC.apb2enr.write(|w| w.afioen().enabled());
+        cx.device.EXTI.imr.modify(|_,w| w.mr6().set_bit());
+        cx.device.EXTI.imr.modify(|_,w| w.mr7().set_bit());
+        */
 
         // Configure clocks and make clock object from clock register
         let clocks = rcc
@@ -141,6 +156,89 @@ mod app {
         // Split GPIO ports into smaller pin objects
         let mut gpioa = cx.device.GPIOA.split(&mut rcc.apb2);
         let mut gpiob = cx.device.GPIOB.split(&mut rcc.apb2);
+
+        // --------
+        // Init RTC
+        // --------
+        let mut pwr = cx.device.PWR;
+        let mut bkp = cx.device.BKP;
+        let mut rtc = cx.device.RTC;
+
+        let mut lsi_hertz:u32 = 30_000;
+
+        // We start by modifying some registers that the HAL already has control of,
+        // behind the HAL's back, using unsafe code. We can do this with safe code before
+        // initializing the HAL, but we have no guarantee that HAL initialization won't
+        // overwrite our changes. For reference, this is what that might have looked like:
+        //cx.device.RCC.apb1enr.modify(|_,w| w.pwren().set_bit().bkpen().set_bit());
+        //cx.device.RCC.csr.modify(|_,w| w.lsion().set_bit());
+        unsafe {
+            // Get address of PWR register block
+            // Note: PWR access can actually be done safely, but we need the volatile write to
+            // ensure that the compiler doesn't put this after our attempts to write to RCC_BDCR.
+            let pwr_ptr: *mut u32 = stm32f1xx_hal::pac::PWR::ptr() as *mut u32;
+
+            // Get address of RCC register block
+            let rcc_ptr: *mut u32 = stm32f1xx_hal::pac::RCC::ptr() as *mut u32;
+
+            // Offset to get apb1enr address
+            // Offset is: 0x1C bytes (from datasheet) / 4 = 7 words
+            let apb1enr_ptr: *mut u32 = rcc_ptr.offset(7);
+            // Get current reg value
+            let mut apb1enr_temp: u32 = read_volatile(apb1enr_ptr);
+            // Set BKPEN: Enable backup domain access
+            apb1enr_temp |= 1<<27;
+            // Set PWREN: Enable backup domain access even harder
+            apb1enr_temp |= 1<<28;
+            // Write changes
+            write_volatile(apb1enr_ptr, apb1enr_temp);
+
+            // Offset to get RCC_CSR address
+            // Offset is: 0x24 bytes (from datasheet) / 4 = 9 words
+            let rcc_csr_ptr: *mut u32 = rcc_ptr.offset(9);
+            // Get current reg value
+            let mut rcc_csr_temp: u32 = read_volatile(rcc_csr_ptr);
+            // Set LSION: Turn on low speed internal oscillator
+            rcc_csr_temp |= 1<<0;
+            // Write changes
+            write_volatile(rcc_csr_ptr, rcc_csr_temp);
+
+            // Offset to get pwr_cr address
+            // Offset is: 0x00 bytes (from datasheet) / 4 = 0 words
+            let pwr_cr_ptr: *mut u32 = pwr_ptr.offset(0);
+            // Get current reg value
+            let mut pwr_cr_temp: u32 = read_volatile(pwr_cr_ptr);
+            // Set DBP: Disable backup domain write protection
+            pwr_cr_temp |= 1<<8;
+            // Write changes
+            write_volatile(pwr_cr_ptr, pwr_cr_temp);
+
+            // Offset to get RCC_BDCR address
+            // Offset is: 0x20 bytes (from datasheet) / 4 = 8 words
+            let rcc_bdcr_ptr: *mut u32 = rcc_ptr.offset(8);
+            // Get current reg value
+            let mut rcc_bdcr_temp: u32 = read_volatile(rcc_bdcr_ptr);
+            // Set RTCEN: Enable RTC
+            rcc_bdcr_temp |= 1<<15;
+            // Set RTCSEL: Set RTC clock source to LSI (Low Speed Internal) clock
+            rcc_bdcr_temp |= 0b10<<8;
+            // Write changes
+            write_volatile(rcc_bdcr_ptr, rcc_bdcr_temp);
+        }
+
+        // Set RTC prescaler. Code partly borrowed from the HAL.
+        let prescaler = (lsi_hertz / 1) - 1;
+        rtc_util::rtc_write(&mut rtc, |rtc| {
+            rtc.prlh.write(|w| unsafe { w.bits(prescaler >> 16) });
+            rtc.prll.write(|w| unsafe { w.bits(prescaler as u16 as u32) });
+        });
+
+        rtc_util::set_time(&mut rtc, 0);
+        rtc_util::set_alarm(&mut rtc, SLEEP_TIME as u32);
+        rtc_util::listen_alarm(&mut rtc);
+        rtc_util::unlisten_seconds(&mut rtc);
+        rtc_util::clear_alarm_flag(&mut rtc);
+        rtc_util::clear_second_flag(&mut rtc);
 
         // ---------------------
         // Init scheduling timer
@@ -182,18 +280,6 @@ mod app {
         // TODO: implement auto-sleep to shut off after an idle period
         // Tell the PMIC to please not shut us off
         sleep_pin.set_high().unwrap();
-        // --------
-        // Init RTC
-        // --------
-        // TODO: Replace This
-        /*let mut rtc = Rtc::rtc(cx.device.RTC, &mut backup_domain);
-        rtc.select_frequency(1.hz());
-        rtc.set_time(0);
-        rtc.set_alarm(SLEEP_TIME as u32);
-        rtc.listen_alarm();
-        rtc.unlisten_seconds();
-        rtc.clear_alarm_flag();
-        rtc.clear_second_flag();*/
 
         // ------------
         // Init buzzer

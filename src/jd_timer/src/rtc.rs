@@ -51,8 +51,8 @@ pub fn alarm(cx: alarm::Context) {
 }
 
 pub fn kick_dog(cx: kick_dog::Context) {
-    let (mut sys_state) =
-        (cx.resources.sys_state);
+    let mut sys_state =
+        cx.resources.sys_state;
     sys_state.lock(|sys_state|{
         match sys_state {
             SysState::Setup => {

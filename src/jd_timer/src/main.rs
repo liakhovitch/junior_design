@@ -75,6 +75,11 @@ mod app {
     use core::fmt::Write;
     use core::future::Future;
     use core::ptr::*;
+    use rtic::rtic_monotonic::{Clock, Milliseconds, Nanoseconds};
+    use embedded_time::duration::*;
+    use core::convert::TryFrom;
+    use rtic::rtic_monotonic::embedded_time::fixed_point::FixedPoint;
+    use rtic::Monotonic;
 
     // Declare type for monotonic timer used by RTIC for task scheduling
     #[monotonic(binds = SysTick, default = true)]
@@ -149,14 +154,25 @@ mod app {
         let mut gpioa = cx.device.GPIOA.split(&mut rcc.apb2);
         let mut gpiob = cx.device.GPIOB.split(&mut rcc.apb2);
 
+        let mut dbg_pin = gpioa.pa10.into_push_pull_output(&mut gpioa.crh);
+        dbg_pin.set_low().unwrap();
+
+        // ---------------------
+        // Init scheduling timer
+        // ---------------------
+        // This monotonic timer object is returned to the RTIC framework for use in task scheduling
+        let mut mono = DwtSystick::new(&mut core.DCB, core.DWT, core.SYST, 8_000_000);
+        unsafe {
+            mono.reset();
+            mono.enable_timer();
+        }
+
         // --------
         // Init RTC
         // --------
         let mut pwr = cx.device.PWR;
         let mut bkp = cx.device.BKP;
         let mut rtc = cx.device.RTC;
-
-        let mut lsi_hertz:u32 = 30_000;
 
         // We start by modifying some registers that the HAL already has control of,
         // behind the HAL's back, using unsafe code. We can do this with safe code before
@@ -218,24 +234,74 @@ mod app {
             write_volatile(rcc_bdcr_ptr, rcc_bdcr_temp);
         }
 
+        // -------------
+        // Calibrate RTC
+        // -------------
+
+        // Procedure:
+        //  * Set the RTC prescaler such that one tick takes about 0.25s
+        //  * Use the system clock to measure how long that tick takes
+        //  * Set the -correct- prescaler based on that data
+
+        // We will spend 1/CAL_DIV seconds on calibration
+        const CAL_DIV:u32 = 4;
+        // Conversion factor from time measurement units to seconds
+        const CONV_FACTOR:u32 = 1_000_000_000;
+        // Initial guess as to the LSI frequency
+        const LSI_GUESS:u32 = 40_000;
+
+        // Initial estimate for LSI frequency
+        //let mut lsi_hertz:u32 = 40_000;
+
         // Set RTC prescaler. Code partly borrowed from the HAL.
-        let prescaler = (lsi_hertz / 1) - 1;
+        let prescaler = (LSI_GUESS / CAL_DIV) - 1;
         rtc_util::rtc_write(&mut rtc, |rtc| {
             rtc.prlh.write(|w| unsafe { w.bits(prescaler >> 16) });
             rtc.prll.write(|w| unsafe { w.bits(prescaler as u16 as u32) });
         });
+
+        // Reset the RTC counter
+        rtc_util::set_time(&mut rtc, 0);
+
+        // Measure initial time
+        // Welcome to the wonderful world of embedded Rust
+
+        let time_start = *(Nanoseconds::<u32>::try_from(
+            mono.try_now().unwrap().duration_since_epoch()
+        ).unwrap().integer());
+
+        // Blocking wait until RTC ticks
+        while rtc_util::current_time(&mut rtc) == 0 {};
+
+        // Measure final time
+        let time_stop = *(Nanoseconds::<u32>::try_from(
+            mono.try_now().unwrap().duration_since_epoch()
+        ).unwrap().integer());
+        // This is the amount of time it takes the LSI to tick 10_000 times
+        let time_diff = time_stop - time_start;
+
+        // Calculate the correct frequency
+        let lsi_hz:u32 = (
+            (((LSI_GUESS / CAL_DIV) as u64) * (CONV_FACTOR as u64))
+            / (time_diff as u64)
+        ) as u32;
+
+        // Set RTC prescaler. Code partly borrowed from the HAL.
+        let prescaler = (lsi_hz) - 1;
+        rtc_util::rtc_write(&mut rtc, |rtc| {
+            rtc.prlh.write(|w| unsafe { w.bits(prescaler >> 16) });
+            rtc.prll.write(|w| unsafe { w.bits(prescaler as u16 as u32) });
+        });
+
+        // ---------
+        // Setup RTC
+        // ---------
 
         rtc_util::set_time(&mut rtc, 0);
         rtc_util::unlisten_alarm(&mut rtc);
         rtc_util::listen_seconds(&mut rtc);
         rtc_util::clear_alarm_flag(&mut rtc);
         rtc_util::clear_second_flag(&mut rtc);
-
-        // ---------------------
-        // Init scheduling timer
-        // ---------------------
-        // This monotonic timer object is returned to the RTIC framework for use in task scheduling
-        let mono = DwtSystick::new(&mut core.DCB, core.DWT, core.SYST, 8_000_000);
 
         // -----------
         // Init buttons
@@ -280,7 +346,7 @@ mod app {
         let mut buzz1 = gpioa.pa1.into_push_pull_output(&mut gpioa.crl);
         buzz1.set_high().unwrap();
         let mut buzzer = Timer::tim2(cx.device.TIM2, &clocks, &mut rcc.apb1)
-            .pwm::<Tim2NoRemap, _, _, _>(buzz0, &mut afio.mapr, 500.hz()).split();
+            .pwm::<Tim2NoRemap, _, _, _>(buzz0, &mut afio.mapr, 440.hz()).split();
         buzzer.set_duty(buzzer.get_max_duty() / 2);
 
         // ----------------
@@ -311,8 +377,6 @@ mod app {
         let interface = I2CDIBuilder::new().init(i2c);
         // Create display in graphics mode (as opposed to terminal mode)
         let mut display: GraphicsMode<_, _> = Builder::new().connect(interface).into();
-        // Small arbitrary delay so clocks can warm up
-        delay(100_000);
         // Init display
         display.init().unwrap();
         display.clear();

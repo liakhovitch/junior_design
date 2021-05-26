@@ -44,6 +44,12 @@
             { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
             :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
             #[allow(unused_imports)] use core :: ptr :: * ;
+            #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+            { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)]
+            use embedded_time :: duration :: * ; #[allow(unused_imports)] use
+            core :: convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+            rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+            #[allow(unused_imports)] use rtic :: Monotonic ;
             #[doc = r" Read the current time from this monotonic"] pub fn
             now() -> rtic :: time :: Instant < DwtSystick < 8_000_000 > >
             {
@@ -94,7 +100,10 @@
         TextStyle,
     } ; use profont :: ProFont24Point ; use embedded_hal :: digital :: v2 ::
     { OutputPin, InputPin } ; use core :: fmt :: Write ; use core :: future ::
-    Future ; use core :: ptr :: * ;
+    Future ; use core :: ptr :: * ; use rtic :: rtic_monotonic ::
+    { Clock, Milliseconds, Nanoseconds } ; use embedded_time :: duration :: *
+    ; use core :: convert :: TryFrom ; use rtic :: rtic_monotonic ::
+    embedded_time :: fixed_point :: FixedPoint ; use rtic :: Monotonic ;
     #[doc = r" User code from within the module"] type MyMono = DwtSystick <
     8_000_000 > ; #[doc = r" User code end"] #[allow(non_snake_case)] fn
     init(cx : init :: Context) -> (init :: LateResources, init :: Monotonics)
@@ -105,9 +114,13 @@
         constrain(& mut rcc . apb2) ; let clocks = rcc . cfgr .
         freeze(& mut flash . acr) ; let mut gpioa = cx . device . GPIOA .
         split(& mut rcc . apb2) ; let mut gpiob = cx . device . GPIOB .
-        split(& mut rcc . apb2) ; let mut pwr = cx . device . PWR ; let mut
-        bkp = cx . device . BKP ; let mut rtc = cx . device . RTC ; let mut
-        lsi_hertz : u32 = 30_000 ; unsafe
+        split(& mut rcc . apb2) ; let mut dbg_pin = gpioa . pa10 .
+        into_push_pull_output(& mut gpioa . crh) ; dbg_pin . set_low() .
+        unwrap() ; let mut mono = DwtSystick ::
+        new(& mut core . DCB, core . DWT, core . SYST, 8_000_000) ; unsafe
+        { mono . reset() ; mono . enable_timer() ; } let mut pwr = cx . device
+        . PWR ; let mut bkp = cx . device . BKP ; let mut rtc = cx . device .
+        RTC ; unsafe
         {
             let pwr_ptr : * mut u32 = stm32f1xx_hal :: pac :: PWR :: ptr() as
             * mut u32 ; let rcc_ptr : * mut u32 = stm32f1xx_hal :: pac :: RCC
@@ -126,7 +139,28 @@
             read_volatile(rcc_bdcr_ptr) ; rcc_bdcr_temp |= 1 << 15 ;
             rcc_bdcr_temp |= 0b10 << 8 ;
             write_volatile(rcc_bdcr_ptr, rcc_bdcr_temp) ;
-        } let prescaler = (lsi_hertz / 1) - 1 ; rtc_util ::
+        } const CAL_DIV : u32 = 4 ; const CONV_FACTOR : u32 = 1_000_000_000 ;
+        const LSI_GUESS : u32 = 40_000 ; let prescaler = (LSI_GUESS / CAL_DIV)
+        - 1 ; rtc_util ::
+        rtc_write(& mut rtc, | rtc |
+                  {
+                      rtc . prlh .
+                      write(| w | unsafe { w . bits(prescaler >> 16) }) ; rtc
+                      . prll .
+                      write(| w | unsafe
+                            { w . bits(prescaler as u16 as u32) }) ;
+                  }) ; rtc_util :: set_time(& mut rtc, 0) ; let time_start = *
+        (Nanoseconds :: < u32 > ::
+         try_from(mono . try_now() . unwrap() . duration_since_epoch()) .
+         unwrap() . integer()) ; while rtc_util :: current_time(& mut rtc) ==
+        0 { } ; let time_stop = *
+        (Nanoseconds :: < u32 > ::
+         try_from(mono . try_now() . unwrap() . duration_since_epoch()) .
+         unwrap() . integer()) ; let time_diff = time_stop - time_start ; let
+        lsi_hz : u32 =
+        ((((LSI_GUESS / CAL_DIV) as u64) * (CONV_FACTOR as u64)) /
+         (time_diff as u64)) as u32 ; let prescaler = (lsi_hz) - 1 ; rtc_util
+        ::
         rtc_write(& mut rtc, | rtc |
                   {
                       rtc . prlh .
@@ -137,10 +171,9 @@
                   }) ; rtc_util :: set_time(& mut rtc, 0) ; rtc_util ::
         unlisten_alarm(& mut rtc) ; rtc_util :: listen_seconds(& mut rtc) ;
         rtc_util :: clear_alarm_flag(& mut rtc) ; rtc_util ::
-        clear_second_flag(& mut rtc) ; let mono = DwtSystick ::
-        new(& mut core . DCB, core . DWT, core . SYST, 8_000_000) ; let mut
-        button_start = gpiob . pb5 . into_pull_up_input(& mut gpiob . crl) ;
-        button_start . make_interrupt_source(& mut afio) ; button_start .
+        clear_second_flag(& mut rtc) ; let mut button_start = gpiob . pb5 .
+        into_pull_up_input(& mut gpiob . crl) ; button_start .
+        make_interrupt_source(& mut afio) ; button_start .
         trigger_on_edge(& cx . device . EXTI, FALLING) ; button_start .
         enable_interrupt(& cx . device . EXTI) ; let mut button_brightness =
         gpiob . pb6 . into_pull_up_input(& mut gpiob . crl) ;
@@ -157,7 +190,7 @@
         pa1 . into_push_pull_output(& mut gpioa . crl) ; buzz1 . set_high() .
         unwrap() ; let mut buzzer = Timer ::
         tim2(cx . device . TIM2, & clocks, & mut rcc . apb1) . pwm :: <
-        Tim2NoRemap, _, _, _ > (buzz0, & mut afio . mapr, 500 . hz()) .
+        Tim2NoRemap, _, _, _ > (buzz0, & mut afio . mapr, 440 . hz()) .
         split() ; buzzer . set_duty(buzzer . get_max_duty() / 2) ; let scl =
         gpiob . pb8 . into_alternate_open_drain(& mut gpiob . crh) ; let sda =
         gpiob . pb9 . into_alternate_open_drain(& mut gpiob . crh) ; let i2c =
@@ -169,10 +202,9 @@
              }, clocks, & mut rcc . apb1, 1000, 10, 1000, 1000,) ; let
         interface = I2CDIBuilder :: new() . init(i2c) ; let mut display :
         GraphicsMode < _, _ > = Builder :: new() . connect(interface) . into()
-        ; delay(100_000) ; display . init() . unwrap() ; display . clear() ;
-        display . flush() . unwrap() ; let _ = handle_adc :: spawn(true) ; let
-        _ = beep :: spawn(70, 2) ; let _ = update_display ::
-        spawn(ScreenPage :: Boot) ;
+        ; display . init() . unwrap() ; display . clear() ; display . flush()
+        . unwrap() ; let _ = handle_adc :: spawn(true) ; let _ = beep ::
+        spawn(70, 2) ; let _ = update_display :: spawn(ScreenPage :: Boot) ;
         (init :: LateResources
          {
              display, button_start, button_brightness, EXTI : cx . device .
@@ -225,6 +257,12 @@
         { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
         Write ; #[allow(unused_imports)] use core :: future :: Future ;
         #[allow(unused_imports)] use core :: ptr :: * ;
+        #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+        { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)] use
+        embedded_time :: duration :: * ; #[allow(unused_imports)] use core ::
+        convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+        rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+        #[allow(unused_imports)] use rtic :: Monotonic ;
         #[doc = r" Resources initialized at runtime"] #[allow(non_snake_case)]
         pub struct LateResources
         {
@@ -296,8 +334,14 @@
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
         { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
         Write ; #[allow(unused_imports)] use core :: future :: Future ;
-        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
-        super :: __rtic_internal_idleResources as Resources ;
+        #[allow(unused_imports)] use core :: ptr :: * ;
+        #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+        { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)] use
+        embedded_time :: duration :: * ; #[allow(unused_imports)] use core ::
+        convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+        rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+        #[allow(unused_imports)] use rtic :: Monotonic ; #[doc(inline)] pub
+        use super :: __rtic_internal_idleResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -452,8 +496,14 @@
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
         { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
         Write ; #[allow(unused_imports)] use core :: future :: Future ;
-        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
-        super :: __rtic_internal_handle_buttonsResources as Resources ;
+        #[allow(unused_imports)] use core :: ptr :: * ;
+        #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+        { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)] use
+        embedded_time :: duration :: * ; #[allow(unused_imports)] use core ::
+        convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+        rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+        #[allow(unused_imports)] use rtic :: Monotonic ; #[doc(inline)] pub
+        use super :: __rtic_internal_handle_buttonsResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -504,8 +554,14 @@
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
         { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
         Write ; #[allow(unused_imports)] use core :: future :: Future ;
-        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
-        super :: __rtic_internal_tickResources as Resources ;
+        #[allow(unused_imports)] use core :: ptr :: * ;
+        #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+        { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)] use
+        embedded_time :: duration :: * ; #[allow(unused_imports)] use core ::
+        convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+        rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+        #[allow(unused_imports)] use rtic :: Monotonic ; #[doc(inline)] pub
+        use super :: __rtic_internal_tickResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -556,8 +612,14 @@
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
         { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
         Write ; #[allow(unused_imports)] use core :: future :: Future ;
-        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
-        super :: __rtic_internal_handle_adcResources as Resources ;
+        #[allow(unused_imports)] use core :: ptr :: * ;
+        #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+        { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)] use
+        embedded_time :: duration :: * ; #[allow(unused_imports)] use core ::
+        convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+        rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+        #[allow(unused_imports)] use rtic :: Monotonic ; #[doc(inline)] pub
+        use super :: __rtic_internal_handle_adcResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -627,7 +689,13 @@
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
             { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
             :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
-            #[allow(unused_imports)] use core :: ptr :: * ; pub struct
+            #[allow(unused_imports)] use core :: ptr :: * ;
+            #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+            { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)]
+            use embedded_time :: duration :: * ; #[allow(unused_imports)] use
+            core :: convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+            rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+            #[allow(unused_imports)] use rtic :: Monotonic ; pub struct
             SpawnHandle { #[doc(hidden)] marker : u32, } impl SpawnHandle
             {
                 pub fn cancel(self) -> Result < bool, () >
@@ -786,8 +854,14 @@
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
         { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
         Write ; #[allow(unused_imports)] use core :: future :: Future ;
-        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
-        super :: __rtic_internal_update_displayResources as Resources ;
+        #[allow(unused_imports)] use core :: ptr :: * ;
+        #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+        { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)] use
+        embedded_time :: duration :: * ; #[allow(unused_imports)] use core ::
+        convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+        rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+        #[allow(unused_imports)] use rtic :: Monotonic ; #[doc(inline)] pub
+        use super :: __rtic_internal_update_displayResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -857,7 +931,13 @@
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
             { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
             :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
-            #[allow(unused_imports)] use core :: ptr :: * ; pub struct
+            #[allow(unused_imports)] use core :: ptr :: * ;
+            #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+            { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)]
+            use embedded_time :: duration :: * ; #[allow(unused_imports)] use
+            core :: convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+            rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+            #[allow(unused_imports)] use rtic :: Monotonic ; pub struct
             SpawnHandle { #[doc(hidden)] marker : u32, } impl SpawnHandle
             {
                 pub fn cancel(self) -> Result < ScreenPage, () >
@@ -1015,8 +1095,14 @@
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
         { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
         Write ; #[allow(unused_imports)] use core :: future :: Future ;
-        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
-        super :: __rtic_internal_reset_displayResources as Resources ;
+        #[allow(unused_imports)] use core :: ptr :: * ;
+        #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+        { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)] use
+        embedded_time :: duration :: * ; #[allow(unused_imports)] use core ::
+        convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+        rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+        #[allow(unused_imports)] use rtic :: Monotonic ; #[doc(inline)] pub
+        use super :: __rtic_internal_reset_displayResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -1086,7 +1172,13 @@
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
             { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
             :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
-            #[allow(unused_imports)] use core :: ptr :: * ; pub struct
+            #[allow(unused_imports)] use core :: ptr :: * ;
+            #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+            { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)]
+            use embedded_time :: duration :: * ; #[allow(unused_imports)] use
+            core :: convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+            rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+            #[allow(unused_imports)] use rtic :: Monotonic ; pub struct
             SpawnHandle { #[doc(hidden)] marker : u32, } impl SpawnHandle
             {
                 pub fn cancel(self) -> Result < (), () >
@@ -1240,8 +1332,14 @@
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
         { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
         Write ; #[allow(unused_imports)] use core :: future :: Future ;
-        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
-        super :: __rtic_internal_beepResources as Resources ;
+        #[allow(unused_imports)] use core :: ptr :: * ;
+        #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+        { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)] use
+        embedded_time :: duration :: * ; #[allow(unused_imports)] use core ::
+        convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+        rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+        #[allow(unused_imports)] use rtic :: Monotonic ; #[doc(inline)] pub
+        use super :: __rtic_internal_beepResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -1311,7 +1409,13 @@
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
             { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
             :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
-            #[allow(unused_imports)] use core :: ptr :: * ; pub struct
+            #[allow(unused_imports)] use core :: ptr :: * ;
+            #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+            { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)]
+            use embedded_time :: duration :: * ; #[allow(unused_imports)] use
+            core :: convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+            rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+            #[allow(unused_imports)] use rtic :: Monotonic ; pub struct
             SpawnHandle { #[doc(hidden)] marker : u32, } impl SpawnHandle
             {
                 pub fn cancel(self) -> Result < (u32, u8,), () >
@@ -1467,8 +1571,14 @@
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
         { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
         Write ; #[allow(unused_imports)] use core :: future :: Future ;
-        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
-        super :: __rtic_internal_unbeepResources as Resources ;
+        #[allow(unused_imports)] use core :: ptr :: * ;
+        #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+        { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)] use
+        embedded_time :: duration :: * ; #[allow(unused_imports)] use core ::
+        convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+        rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+        #[allow(unused_imports)] use rtic :: Monotonic ; #[doc(inline)] pub
+        use super :: __rtic_internal_unbeepResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -1538,7 +1648,13 @@
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
             { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
             :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
-            #[allow(unused_imports)] use core :: ptr :: * ; pub struct
+            #[allow(unused_imports)] use core :: ptr :: * ;
+            #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+            { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)]
+            use embedded_time :: duration :: * ; #[allow(unused_imports)] use
+            core :: convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+            rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+            #[allow(unused_imports)] use rtic :: Monotonic ; pub struct
             SpawnHandle { #[doc(hidden)] marker : u32, } impl SpawnHandle
             {
                 pub fn cancel(self) -> Result < (u32, u8,), () >
@@ -1696,8 +1812,14 @@
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
         { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
         Write ; #[allow(unused_imports)] use core :: future :: Future ;
-        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
-        super :: __rtic_internal_kick_dogResources as Resources ;
+        #[allow(unused_imports)] use core :: ptr :: * ;
+        #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+        { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)] use
+        embedded_time :: duration :: * ; #[allow(unused_imports)] use core ::
+        convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+        rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+        #[allow(unused_imports)] use rtic :: Monotonic ; #[doc(inline)] pub
+        use super :: __rtic_internal_kick_dogResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -1767,7 +1889,13 @@
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
             { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
             :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
-            #[allow(unused_imports)] use core :: ptr :: * ; pub struct
+            #[allow(unused_imports)] use core :: ptr :: * ;
+            #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+            { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)]
+            use embedded_time :: duration :: * ; #[allow(unused_imports)] use
+            core :: convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+            rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+            #[allow(unused_imports)] use rtic :: Monotonic ; pub struct
             SpawnHandle { #[doc(hidden)] marker : u32, } impl SpawnHandle
             {
                 pub fn cancel(self) -> Result < (), () >
@@ -1925,8 +2053,14 @@
         #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
         { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
         Write ; #[allow(unused_imports)] use core :: future :: Future ;
-        #[allow(unused_imports)] use core :: ptr :: * ; #[doc(inline)] pub use
-        super :: __rtic_internal_to_stateResources as Resources ;
+        #[allow(unused_imports)] use core :: ptr :: * ;
+        #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+        { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)] use
+        embedded_time :: duration :: * ; #[allow(unused_imports)] use core ::
+        convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+        rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+        #[allow(unused_imports)] use rtic :: Monotonic ; #[doc(inline)] pub
+        use super :: __rtic_internal_to_stateResources as Resources ;
         #[doc = r" Execution context"] pub struct Context < 'a >
         {
             #[doc = r" Resources this task has access to"] pub resources :
@@ -1996,7 +2130,13 @@
             #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
             { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt
             :: Write ; #[allow(unused_imports)] use core :: future :: Future ;
-            #[allow(unused_imports)] use core :: ptr :: * ; pub struct
+            #[allow(unused_imports)] use core :: ptr :: * ;
+            #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+            { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)]
+            use embedded_time :: duration :: * ; #[allow(unused_imports)] use
+            core :: convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+            rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+            #[allow(unused_imports)] use rtic :: Monotonic ; pub struct
             SpawnHandle { #[doc(hidden)] marker : u32, } impl SpawnHandle
             {
                 pub fn cancel(self) -> Result < SysState, () >

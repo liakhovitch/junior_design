@@ -3,6 +3,9 @@
 #![allow(unused_imports)]
 
 use panic_halt as _;
+
+// Declare modules for the other parts of the project.
+// Rust automatically matches these by filename and creates the proper scopes.
 mod buttons;
 mod pot;
 mod ui;
@@ -19,6 +22,7 @@ peripherals = true, dispatchers = [DMA1_CHANNEL1,DMA1_CHANNEL2,DMA1_CHANNEL3])]
 // RTIC application
 mod app {
 
+    // Include other parts of the project so the task definitions at the bottom can access them
     use crate::buttons::*;
     use crate::pot::*;
     use crate::ui::*;
@@ -26,6 +30,7 @@ mod app {
     use crate::beep::*;
     use crate::rtc::*;
     use crate::states::*;
+    // My modified version of the stm32f1xx_hal RTC library
     use crate::rtc_util;
 
     use crate::config::{SLEEP_TIME};
@@ -61,12 +66,14 @@ mod app {
         Builder,
         I2CDIBuilder,
     };
+
     use embedded_graphics::{
         fonts::Text,
         pixelcolor::BinaryColor,
         prelude::*,
         style::TextStyle,
     };
+
     use profont::ProFont24Point;
 
     // Import peripheral control methods from general HAL definition
@@ -85,10 +92,6 @@ mod app {
     #[monotonic(binds = SysTick, default = true)]
     type MyMono = DwtSystick<8_000_000>; // 8 MHz
 
- /*   struct RtcRegs {
-
-}*/
-
     // Resources shared by all handlers.
     // All resourced not initialized here by macros are initialized in [init] and returned to RTIC
     //   in the init::LateResources object.
@@ -99,7 +102,6 @@ mod app {
         button_brightness: PB6<Input<PullUp>>,
         EXTI: stm32f1xx_hal::pac::EXTI,
         clocks: stm32f1xx_hal::rcc::Clocks,
-        //serial: (serial::Tx<USART1>, serial::Rx<USART1>),
         adc1: Adc<ADC1>,
         pot: PA4<Analog>,
         pot_pos: u16,
@@ -120,17 +122,15 @@ mod app {
         disp_call_cnt: u8,
     }
 
-    // Init function (duh)
+    // Init function
     #[init ()]
-    // CX object contains our PAC.
+    // CX object contains our PAC (peripheral access crate)
     // Init function initializes resources and returns them to RTIC via the LateResources object.
     fn init(cx: init::Context) -> (init::LateResources,init::Monotonics){
 
-        // Enable writing to backup domain and power registers so we can later configure RTC.
-        // This must be done before the HAL initializes because the HAL takes ownership of the
-        //   APB1ENR register and only allows access from within the library. NOTE: this code
-        //   is extremely unstable and may stop working if a later version of the HAL starts
-        //   overwriting these bits in this register.
+// -------------
+// General Setup
+// -------------
 
         // Enable cycle counter
         let mut core = cx.core;
@@ -154,12 +154,9 @@ mod app {
         let mut gpioa = cx.device.GPIOA.split(&mut rcc.apb2);
         let mut gpiob = cx.device.GPIOB.split(&mut rcc.apb2);
 
-        let mut dbg_pin = gpioa.pa10.into_push_pull_output(&mut gpioa.crh);
-        dbg_pin.set_low().unwrap();
-
-        // ---------------------
-        // Init scheduling timer
-        // ---------------------
+// ---------------------
+// Init scheduling timer
+// ---------------------
         // This monotonic timer object is returned to the RTIC framework for use in task scheduling
         let mut mono = DwtSystick::new(&mut core.DCB, core.DWT, core.SYST, 8_000_000);
         unsafe {
@@ -167,11 +164,9 @@ mod app {
             mono.enable_timer();
         }
 
-        // --------
-        // Init RTC
-        // --------
-        let mut pwr = cx.device.PWR;
-        let mut bkp = cx.device.BKP;
+// --------
+// Init RTC
+// --------
         let mut rtc = cx.device.RTC;
 
         // We start by modifying some registers that the HAL already has control of,
@@ -234,24 +229,23 @@ mod app {
             write_volatile(rcc_bdcr_ptr, rcc_bdcr_temp);
         }
 
-        // -------------
-        // Calibrate RTC
-        // -------------
+// -------------
+// Calibrate RTC
+// -------------
 
         // Procedure:
         //  * Set the RTC prescaler such that one tick takes about 0.25s
         //  * Use the system clock to measure how long that tick takes
         //  * Set the -correct- prescaler based on that data
+        // The datasheet recommends a hardware-based method not available on this particular chip,
+        //   so I had to improvise.
 
         // We will spend 1/CAL_DIV seconds on calibration
         const CAL_DIV:u32 = 4;
         // Conversion factor from time measurement units to seconds
         const CONV_FACTOR:u32 = 1_000_000_000;
-        // Initial guess as to the LSI frequency
+        // Initial guess as to the LSI (Low Speed Internal oscillator) frequency
         const LSI_GUESS:u32 = 40_000;
-
-        // Initial estimate for LSI frequency
-        //let mut lsi_hertz:u32 = 40_000;
 
         // Set RTC prescaler. Code partly borrowed from the HAL.
         let prescaler = (LSI_GUESS / CAL_DIV) - 1;
@@ -261,11 +255,13 @@ mod app {
         });
 
         // Reset the RTC counter
+        // This is done before the clock starts to compensate for the RTC read operation done after
+        // the clock starts. Both operations take around three RTC clock cycles, which is a lot of
+        // system cycles.
         rtc_util::set_time(&mut rtc, 0);
 
         // Measure initial time
-        // Welcome to the wonderful world of embedded Rust
-
+        // Welcome to the wonderful world of embedded Rust!
         let time_start = *(Nanoseconds::<u32>::try_from(
             mono.try_now().unwrap().duration_since_epoch()
         ).unwrap().integer());
@@ -277,10 +273,13 @@ mod app {
         let time_stop = *(Nanoseconds::<u32>::try_from(
             mono.try_now().unwrap().duration_since_epoch()
         ).unwrap().integer());
+
         // This is the amount of time it takes the LSI to tick 10_000 times
         let time_diff = time_stop - time_start;
 
         // Calculate the correct frequency
+        // To do this without FP, we order operations such that numbers get BIG before they get
+        //   small again. Hence, conversion to u64 and then conversion back into u32.
         let lsi_hz:u32 = (
             (((LSI_GUESS / CAL_DIV) as u64) * (CONV_FACTOR as u64))
             / (time_diff as u64)
@@ -293,9 +292,9 @@ mod app {
             rtc.prll.write(|w| unsafe { w.bits(prescaler as u16 as u32) });
         });
 
-        // ---------
-        // Setup RTC
-        // ---------
+// ---------
+// Setup RTC
+// ---------
 
         rtc_util::set_time(&mut rtc, 0);
         rtc_util::unlisten_alarm(&mut rtc);
@@ -303,9 +302,9 @@ mod app {
         rtc_util::clear_alarm_flag(&mut rtc);
         rtc_util::clear_second_flag(&mut rtc);
 
-        // -----------
-        // Init buttons
-        // -----------
+// -----------
+// Init buttons
+// -----------
         // Start timer button
         let mut button_start = gpiob.pb5.into_pull_up_input(&mut gpiob.crl);
         button_start.make_interrupt_source(&mut afio);
@@ -318,40 +317,40 @@ mod app {
         button_brightness.enable_interrupt(&cx.device.EXTI);
         // Note: Both buttons trigger the EXTI9_5 interrupt.
 
-        // ------------
-        // Init pot adc
-        // ------------
+// ------------
+// Init pot adc
+// ------------
         // Setup adc1 with default settings
         let mut adc1 = Adc::adc1(cx.device.ADC1, &mut rcc.apb2, clocks);
         adc1.set_sample_time(SampleTime::T_239);
         // Setup PA4 as analog input
         let mut pot = gpioa.pa4.into_analog(&mut gpioa.crl);
+        // Take initial read
         let mut pot_pos = adc1.read(&mut pot).unwrap();
         pot_pos = pot_pos >> 4;
 
-        // -----------------
-        // Init PMIC control
-        // -----------------
+// -----------------
+// Init PMIC control
+// -----------------
         let mut sleep_pin = gpioa.pa9.into_push_pull_output(&mut gpioa.crh);
-        // Assert buck converter enable pin to stop PSU from shutting off.
-        // TODO: implement auto-sleep to shut off after an idle period
         // Tell the PMIC to please not shut us off
         sleep_pin.set_high().unwrap();
 
-        // ------------
-        // Init buzzer
-        // ------------
+// ------------
+// Init buzzer
+// ------------
         // For now, only using PWM on one pin
+        // Polarity flipping for individual timer channels not yet supported by HAL
         let buzz0 = gpioa.pa0.into_alternate_push_pull(&mut gpioa.crl);
         let mut buzz1 = gpioa.pa1.into_push_pull_output(&mut gpioa.crl);
-        buzz1.set_high().unwrap();
+        buzz1.set_low().unwrap();
         let mut buzzer = Timer::tim2(cx.device.TIM2, &clocks, &mut rcc.apb1)
             .pwm::<Tim2NoRemap, _, _, _>(buzz0, &mut afio.mapr, 440.hz()).split();
         buzzer.set_duty(buzzer.get_max_duty() / 2);
 
-        // ----------------
-        // Init I2C display
-        // ----------------
+// ----------------
+// Init I2C display
+// ----------------
         // Init IO pins
         let scl = gpiob.pb8.into_alternate_open_drain(&mut gpiob.crh);
         let sda = gpiob.pb9.into_alternate_open_drain(&mut gpiob.crh);
@@ -382,9 +381,9 @@ mod app {
         display.clear();
         display.flush().unwrap();
 
-        // ------------------
-        // Start bootup tasks
-        // ------------------
+// ------------------
+// Start bootup tasks
+// ------------------
 
         // Read initial ADC value
         let _ = handle_adc::spawn(true);
@@ -425,6 +424,9 @@ mod app {
     }
 
     // This is where we declare tasks which are in external files.
+    // 'binds' specifies interrupts the task is bound to
+    // 'resources' specify global resource permissions
+    // 'priority' decides which tasks can preempt each other
     extern "Rust" {
         #[task(binds = EXTI9_5, resources = [&clocks, button_start, button_brightness, EXTI, display, brightness_state, sys_state], priority=1)]
         fn handle_buttons(cx: handle_buttons::Context);
@@ -434,9 +436,9 @@ mod app {
         fn update_display(cx: update_display::Context, screen_type:ScreenPage);
         #[task(resources = [disp_call_cnt, sys_state], priority=1, capacity=10)]
         fn reset_display(cx: reset_display::Context);
-        #[task(resources = [buzzer], priority=1, capacity=1)]
+        #[task(resources = [buzzer], priority=2, capacity=1)]
         fn beep(cx: beep::Context, length: u32, count: u8);
-        #[task(resources = [buzzer], priority=1, capacity=1)]
+        #[task(resources = [buzzer], priority=2, capacity=1)]
         fn unbeep(cx: unbeep::Context, length: u32, count: u8);
         #[task(binds = RTC, resources = [rtc, sys_state, max_time, disp_call_cnt], priority=2)]
         fn tick(cx: tick::Context);

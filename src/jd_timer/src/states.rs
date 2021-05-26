@@ -16,7 +16,8 @@ use stm32f1xx_hal::{
 
 use embedded_hal::digital::v2::OutputPin;
 
-
+// This task is spawned by other parts of the program. It does some housekeeping to move the
+//   system to a specific state.
 pub fn to_state(cx: to_state::Context, target: SysState){
     // Bring resources into scope
     let (mut sys_state, mut sleep_pin) =
@@ -63,7 +64,7 @@ pub fn to_state(cx: to_state::Context, target: SysState){
                 // Make sure we aren't shutting off
                 sleep_pin.set_high().unwrap();
                 // Update the display
-                let _ = update_display::spawn(ScreenPage::Setup);
+                let _ = update_display::spawn(ScreenPage::Timer);
             }
             SysState::Sleep => {
                 // Update system state

@@ -1,3 +1,4 @@
+// General configuration file for defining constants that might need tweaking.
 
 // Maximum time user can set on the timer
 pub const MAX_TIME: u16 = 900;

@@ -85,17 +85,22 @@ pub fn handle_adc(cx: app::handle_adc::Context, silent:bool){
             if pot_changed == true || silent == true {
                 if pot_pos_new > *pot_pos {*pot_dir = true}
                 else {*pot_dir = false}
+                // Convert old pot position into time
+                let max_time_old:u16 = (((MAX_TIME/TIME_STEPS)*(255_u16-*pot_pos))/255)*TIME_STEPS;
                 // Update pot position
                 *pot_pos = pot_pos_new;
-                // Update the time remaining on the clock
-                max_time.lock(|max_time|{
-                    // This awful formula maps the knob position to the time range and rounds to
-                    //   the nearest TIME_STEPS seconds
-                    *max_time = (((MAX_TIME/TIME_STEPS)*(255_u16-*pot_pos))/255)*TIME_STEPS;
-                });
-                // Update the display with the new time
-                if silent == false {
-                    let _ = update_display::spawn(ScreenPage::Setup);
+                // Convert new pot position into time
+                let max_time_new:u16 = (((MAX_TIME/TIME_STEPS)*(255_u16-*pot_pos))/255)*TIME_STEPS;
+                // Only update the display if the pot has moved enough to change the time
+                if max_time_old != max_time_new {
+                    // Update the time remaining on the clock
+                    max_time.lock(|max_time|{
+                        *max_time = max_time_new;
+                    });
+                    // Update the display with the new time
+                    if silent == false {
+                        let _ = update_display::spawn(ScreenPage::Setup);
+                    }
                 }
                 // Kick the dog
                 let _ = kick_dog::spawn();

@@ -114,13 +114,10 @@
         constrain(& mut rcc . apb2) ; let clocks = rcc . cfgr .
         freeze(& mut flash . acr) ; let mut gpioa = cx . device . GPIOA .
         split(& mut rcc . apb2) ; let mut gpiob = cx . device . GPIOB .
-        split(& mut rcc . apb2) ; let mut dbg_pin = gpioa . pa10 .
-        into_push_pull_output(& mut gpioa . crh) ; dbg_pin . set_low() .
-        unwrap() ; let mut mono = DwtSystick ::
+        split(& mut rcc . apb2) ; let mut mono = DwtSystick ::
         new(& mut core . DCB, core . DWT, core . SYST, 8_000_000) ; unsafe
-        { mono . reset() ; mono . enable_timer() ; } let mut pwr = cx . device
-        . PWR ; let mut bkp = cx . device . BKP ; let mut rtc = cx . device .
-        RTC ; unsafe
+        { mono . reset() ; mono . enable_timer() ; } let mut rtc = cx . device
+        . RTC ; unsafe
         {
             let pwr_ptr : * mut u32 = stm32f1xx_hal :: pac :: PWR :: ptr() as
             * mut u32 ; let rcc_ptr : * mut u32 = stm32f1xx_hal :: pac :: RCC
@@ -187,7 +184,7 @@
         sleep_pin = gpioa . pa9 . into_push_pull_output(& mut gpioa . crh) ;
         sleep_pin . set_high() . unwrap() ; let buzz0 = gpioa . pa0 .
         into_alternate_push_pull(& mut gpioa . crl) ; let mut buzz1 = gpioa .
-        pa1 . into_push_pull_output(& mut gpioa . crl) ; buzz1 . set_high() .
+        pa1 . into_push_pull_output(& mut gpioa . crl) ; buzz1 . set_low() .
         unwrap() ; let mut buzzer = Timer ::
         tim2(cx . device . TIM2, & clocks, & mut rcc . apb1) . pwm :: <
         Tim2NoRemap, _, _, _ > (buzz0, & mut afio . mapr, 440 . hz()) .
@@ -647,7 +644,7 @@
                              enqueue_unchecked((crate :: app :: P1_T ::
                                                 handle_adc, index)) ;
                          }) ; rtic ::
-                    pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL2) ;
+                    pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL3) ;
                     Ok(())
                 } else { Err(input) }
             }
@@ -889,7 +886,7 @@
                              enqueue_unchecked((crate :: app :: P1_T ::
                                                 update_display, index)) ;
                          }) ; rtic ::
-                    pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL2) ;
+                    pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL3) ;
                     Ok(())
                 } else { Err(input) }
             }
@@ -1130,7 +1127,7 @@
                              enqueue_unchecked((crate :: app :: P1_T ::
                                                 reset_display, index)) ;
                          }) ; rtic ::
-                    pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL2) ;
+                    pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL3) ;
                     Ok(())
                 } else { Err(input) }
             }
@@ -1363,8 +1360,8 @@
                     write(input) ; rtic :: export :: interrupt ::
                     free(| _ |
                          {
-                             crate :: app :: __rtic_internal_P1_RQ .
-                             enqueue_unchecked((crate :: app :: P1_T :: beep,
+                             crate :: app :: __rtic_internal_P2_RQ .
+                             enqueue_unchecked((crate :: app :: P2_T :: beep,
                                                 index)) ;
                          }) ; rtic ::
                     pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL2) ;
@@ -1602,8 +1599,8 @@
                     write(input) ; rtic :: export :: interrupt ::
                     free(| _ |
                          {
-                             crate :: app :: __rtic_internal_P1_RQ .
-                             enqueue_unchecked((crate :: app :: P1_T ::
+                             crate :: app :: __rtic_internal_P2_RQ .
+                             enqueue_unchecked((crate :: app :: P2_T ::
                                                 unbeep, index)) ;
                          }) ; rtic ::
                     pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL2) ;
@@ -2088,7 +2085,7 @@
                              enqueue_unchecked((crate :: app :: P1_T ::
                                                 to_state, index)) ;
                          }) ; rtic ::
-                    pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL2) ;
+                    pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL3) ;
                     Ok(())
                 } else { Err(input) }
             }
@@ -2516,7 +2513,7 @@
          FnOnce(& mut stm32f1xx_hal :: pwm :: PwmChannel < TIM2, C1 >) ->
          RTIC_INTERNAL_R) -> RTIC_INTERNAL_R
         {
-            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 2u8 ; unsafe
             {
                 rtic :: export ::
                 lock(__rtic_internal_buzzer . as_mut_ptr(), self . priority(),
@@ -2761,14 +2758,13 @@
             }
         }
     } #[allow(non_camel_case_types)] #[derive(Clone, Copy)] #[doc(hidden)] pub
-    enum P1_T
-    { beep, handle_adc, reset_display, to_state, unbeep, update_display, }
+    enum P1_T { handle_adc, reset_display, to_state, update_display, }
     #[doc(hidden)] static mut __rtic_internal_P1_RQ : rtic :: export :: SCRQ <
-    P1_T, rtic :: export :: consts :: U32 > = rtic :: export ::
+    P1_T, rtic :: export :: consts :: U16 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
     #[allow(non_snake_case)]
     #[doc = "Interrupt handler to dispatch tasks at priority 1"] #[no_mangle]
-    unsafe fn DMA1_CHANNEL2()
+    unsafe fn DMA1_CHANNEL3()
     {
         #[doc = r" The priority of this interrupt handler"] const PRIORITY :
         u8 = 1u8 ; rtic :: export ::
@@ -2779,16 +2775,7 @@
                 {
                     match task
                     {
-                        P1_T :: beep =>
-                        {
-                            let(_0, _1,) = __rtic_internal_beep_INPUTS .
-                            get_unchecked(usize :: from(index)) . as_ptr() .
-                            read() ; __rtic_internal_beep_FQ . split() . 0 .
-                            enqueue_unchecked(index) ; let priority = & rtic
-                            :: export :: Priority :: new(PRIORITY) ; crate ::
-                            app ::
-                            beep(beep :: Context :: new(priority), _0, _1)
-                        } P1_T :: handle_adc =>
+                        P1_T :: handle_adc =>
                         {
                             let _0 = __rtic_internal_handle_adc_INPUTS .
                             get_unchecked(usize :: from(index)) . as_ptr() .
@@ -2817,15 +2804,6 @@
                             :: export :: Priority :: new(PRIORITY) ; crate ::
                             app ::
                             to_state(to_state :: Context :: new(priority), _0)
-                        } P1_T :: unbeep =>
-                        {
-                            let(_0, _1,) = __rtic_internal_unbeep_INPUTS .
-                            get_unchecked(usize :: from(index)) . as_ptr() .
-                            read() ; __rtic_internal_unbeep_FQ . split() . 0 .
-                            enqueue_unchecked(index) ; let priority = & rtic
-                            :: export :: Priority :: new(PRIORITY) ; crate ::
-                            app ::
-                            unbeep(unbeep :: Context :: new(priority), _0, _1)
                         } P1_T :: update_display =>
                         {
                             let _0 = __rtic_internal_update_display_INPUTS .
@@ -2836,6 +2814,46 @@
                             new(PRIORITY) ; crate :: app ::
                             update_display(update_display :: Context ::
                                            new(priority), _0)
+                        }
+                    }
+                }
+            }) ;
+    } #[allow(non_camel_case_types)] #[derive(Clone, Copy)] #[doc(hidden)] pub
+    enum P2_T { beep, unbeep, } #[doc(hidden)] static mut
+    __rtic_internal_P2_RQ : rtic :: export :: SCRQ < P2_T, rtic :: export ::
+    consts :: U2 > = rtic :: export ::
+    Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
+    #[allow(non_snake_case)]
+    #[doc = "Interrupt handler to dispatch tasks at priority 2"] #[no_mangle]
+    unsafe fn DMA1_CHANNEL2()
+    {
+        #[doc = r" The priority of this interrupt handler"] const PRIORITY :
+        u8 = 2u8 ; rtic :: export ::
+        run(PRIORITY, ||
+            {
+                while let Some((task, index)) = __rtic_internal_P2_RQ .
+                split() . 1 . dequeue()
+                {
+                    match task
+                    {
+                        P2_T :: beep =>
+                        {
+                            let(_0, _1,) = __rtic_internal_beep_INPUTS .
+                            get_unchecked(usize :: from(index)) . as_ptr() .
+                            read() ; __rtic_internal_beep_FQ . split() . 0 .
+                            enqueue_unchecked(index) ; let priority = & rtic
+                            :: export :: Priority :: new(PRIORITY) ; crate ::
+                            app ::
+                            beep(beep :: Context :: new(priority), _0, _1)
+                        } P2_T :: unbeep =>
+                        {
+                            let(_0, _1,) = __rtic_internal_unbeep_INPUTS .
+                            get_unchecked(usize :: from(index)) . as_ptr() .
+                            read() ; __rtic_internal_unbeep_FQ . split() . 0 .
+                            enqueue_unchecked(index) ; let priority = & rtic
+                            :: export :: Priority :: new(PRIORITY) ; crate ::
+                            app ::
+                            unbeep(unbeep :: Context :: new(priority), _0, _1)
                         }
                     }
                 }
@@ -2902,7 +2920,7 @@
                          enqueue_unchecked((P1_T :: handle_adc, index))) ;
                     rtic ::
                     pend(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
-                         :: interrupt :: DMA1_CHANNEL2) ;
+                         :: interrupt :: DMA1_CHANNEL3) ;
                 } SCHED_T :: update_display =>
                 {
                     rtic :: export :: interrupt ::
@@ -2910,7 +2928,7 @@
                          enqueue_unchecked((P1_T :: update_display, index))) ;
                     rtic ::
                     pend(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
-                         :: interrupt :: DMA1_CHANNEL2) ;
+                         :: interrupt :: DMA1_CHANNEL3) ;
                 } SCHED_T :: reset_display =>
                 {
                     rtic :: export :: interrupt ::
@@ -2918,19 +2936,19 @@
                          enqueue_unchecked((P1_T :: reset_display, index))) ;
                     rtic ::
                     pend(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
-                         :: interrupt :: DMA1_CHANNEL2) ;
+                         :: interrupt :: DMA1_CHANNEL3) ;
                 } SCHED_T :: beep =>
                 {
                     rtic :: export :: interrupt ::
-                    free(| _ | __rtic_internal_P1_RQ . split() . 0 .
-                         enqueue_unchecked((P1_T :: beep, index))) ; rtic ::
+                    free(| _ | __rtic_internal_P2_RQ . split() . 0 .
+                         enqueue_unchecked((P2_T :: beep, index))) ; rtic ::
                     pend(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
                          :: interrupt :: DMA1_CHANNEL2) ;
                 } SCHED_T :: unbeep =>
                 {
                     rtic :: export :: interrupt ::
-                    free(| _ | __rtic_internal_P1_RQ . split() . 0 .
-                         enqueue_unchecked((P1_T :: unbeep, index))) ; rtic ::
+                    free(| _ | __rtic_internal_P2_RQ . split() . 0 .
+                         enqueue_unchecked((P2_T :: unbeep, index))) ; rtic ::
                     pend(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
                          :: interrupt :: DMA1_CHANNEL2) ;
                 } SCHED_T :: kick_dog =>
@@ -2948,7 +2966,7 @@
                          enqueue_unchecked((P1_T :: to_state, index))) ; rtic
                     ::
                     pend(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
-                         :: interrupt :: DMA1_CHANNEL2) ;
+                         :: interrupt :: DMA1_CHANNEL3) ;
                 }
             }
         } rtic :: export :: interrupt ::
@@ -2998,8 +3016,18 @@
              ((1 << stm32f1xx_hal :: pac :: NVIC_PRIO_BITS) - 1u8 as usize)] ;
             core . NVIC .
             set_priority(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
-                         :: interrupt :: DMA1_CHANNEL2, rtic :: export ::
+                         :: interrupt :: DMA1_CHANNEL3, rtic :: export ::
                          logical2hw(1u8, stm32f1xx_hal :: pac ::
+                                    NVIC_PRIO_BITS),) ; rtic :: export :: NVIC
+            ::
+            unmask(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
+                   :: interrupt :: DMA1_CHANNEL3) ; let _ =
+            [() ;
+             ((1 << stm32f1xx_hal :: pac :: NVIC_PRIO_BITS) - 2u8 as usize)] ;
+            core . NVIC .
+            set_priority(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
+                         :: interrupt :: DMA1_CHANNEL2, rtic :: export ::
+                         logical2hw(2u8, stm32f1xx_hal :: pac ::
                                     NVIC_PRIO_BITS),) ; rtic :: export :: NVIC
             ::
             unmask(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml

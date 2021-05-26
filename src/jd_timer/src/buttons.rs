@@ -30,6 +30,7 @@ use profont::ProFont24Point;
 
 use embedded_hal::digital::v2::InputPin;
 
+// Task triggered by button interrupt.
 pub fn handle_buttons(cx: app::handle_buttons::Context){
     // Bring resources into scope
     let (mut button_start, mut button_brightness) =

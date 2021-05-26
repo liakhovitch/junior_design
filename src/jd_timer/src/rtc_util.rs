@@ -51,10 +51,10 @@ pub fn set_alarm(rtc: &mut RTC, counter_value: u32) {
         rtc_write(rtc, |rtc| {
         (*rtc)
             .alrh
-            .write(|w| unsafe { w.alrh().bits((alarm_value >> 16) as u16) });
+            .write(|w|  w.alrh().bits((alarm_value >> 16) as u16) );
         (*rtc)
             .alrl
-            .write(|w| unsafe { w.alrl().bits(alarm_value as u16) });
+            .write(|w|  w.alrl().bits(alarm_value as u16) );
     });
 
     clear_alarm_flag(rtc);
@@ -63,12 +63,12 @@ pub fn set_alarm(rtc: &mut RTC, counter_value: u32) {
 // Enables the RTC interrupt to trigger when the counter reaches the alarm value. In addition,
 // if the EXTI controller has been set up correctly, this function also enables the RTCALARM
 // interrupt.
-pub fn listen_alarm(rtc: &mut RTC) {
+/*pub fn listen_alarm(rtc: &mut RTC) {
     // Enable alarm interrupt
     rtc_write(rtc, |rtc| {
         (*rtc).crh.modify(|_, w| w.alrie().set_bit());
     })
-}
+}*/
 
 // Stops the RTC alarm from triggering the RTC and RTCALARM interrupts
 pub fn unlisten_alarm(rtc: &mut RTC) {

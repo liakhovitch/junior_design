@@ -190,10 +190,13 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
     });
 }
 
+// Figure out what the display should be showing for the current system state and show it
 pub fn reset_display(cx: reset_display::Context) {
     let mut disp_call_cnt = cx.resources.disp_call_cnt;
     let mut sys_state = cx.resources.sys_state;
     disp_call_cnt.lock(|disp_call_cnt|{
+        // Call count mechanism ensures we don't revert the screen if we're already showing
+        //   another, newer status message.
         if *disp_call_cnt <= 1 {
            *disp_call_cnt = 0;
            sys_state.lock(|sys_state|{

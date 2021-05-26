@@ -137,13 +137,6 @@ mod app {
         // Take ownership of AFIO register
         let mut afio = cx.device.AFIO.constrain(&mut rcc.apb2);
 
-        //let mut backup_domain = rcc.bkp.constrain(bkp, &mut rcc.apb1, &mut pwr);
-        /*
-        cx.device.RCC.apb2enr.write(|w| w.afioen().enabled());
-        cx.device.EXTI.imr.modify(|_,w| w.mr6().set_bit());
-        cx.device.EXTI.imr.modify(|_,w| w.mr7().set_bit());
-        */
-
         // Configure clocks and make clock object from clock register
         let clocks = rcc
             .cfgr
@@ -155,9 +148,6 @@ mod app {
         // Split GPIO ports into smaller pin objects
         let mut gpioa = cx.device.GPIOA.split(&mut rcc.apb2);
         let mut gpiob = cx.device.GPIOB.split(&mut rcc.apb2);
-
-        let mut debug_pin = gpioa.pa10.into_push_pull_output(&mut gpioa.crh);
-        debug_pin.set_low().unwrap();
 
         // --------
         // Init RTC
@@ -322,10 +312,15 @@ mod app {
         // Create display in graphics mode (as opposed to terminal mode)
         let mut display: GraphicsMode<_, _> = Builder::new().connect(interface).into();
         // Small arbitrary delay so clocks can warm up
-        delay(1_000_000);
+        delay(100_000);
         // Init display
         display.init().unwrap();
         display.clear();
+        display.flush().unwrap();
+
+        // ------------------
+        // Start bootup tasks
+        // ------------------
 
         // Read initial ADC value
         let _ = handle_adc::spawn(true);
@@ -371,7 +366,7 @@ mod app {
         fn handle_buttons(cx: handle_buttons::Context);
         #[task(resources = [pot, pot_pos, adc1, pot_dir, max_time], priority=1)]
         fn handle_adc(cx: handle_adc::Context, silent:bool);
-        #[task(resources = [rtc, display, max_time, brightness_state, disp_call_cnt], priority=1, capacity=2)]
+        #[task(resources = [rtc, display, max_time, brightness_state, disp_call_cnt], priority=1, capacity=3)]
         fn update_display(cx: update_display::Context, screen_type:ScreenPage);
         #[task(resources = [disp_call_cnt, sys_state], priority=1, capacity=10)]
         fn reset_display(cx: reset_display::Context);
@@ -383,7 +378,7 @@ mod app {
         fn tick(cx: tick::Context);
         #[task(resources = [rtc, sys_state], priority=3, capacity=1)]
         fn kick_dog(cx: kick_dog::Context);
-        #[task(resources = [rtc, sys_state, sleep_pin, max_time, disp_call_cnt], priority=3, capacity=1)]
+        #[task(resources = [rtc, sys_state, sleep_pin, max_time, disp_call_cnt], priority=1, capacity=1)]
         fn to_state(cx: to_state::Context, target: SysState);
     }
 }

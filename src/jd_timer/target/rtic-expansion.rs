@@ -105,11 +105,9 @@
         constrain(& mut rcc . apb2) ; let clocks = rcc . cfgr .
         freeze(& mut flash . acr) ; let mut gpioa = cx . device . GPIOA .
         split(& mut rcc . apb2) ; let mut gpiob = cx . device . GPIOB .
-        split(& mut rcc . apb2) ; let mut debug_pin = gpioa . pa10 .
-        into_push_pull_output(& mut gpioa . crh) ; debug_pin . set_low() .
-        unwrap() ; let mut pwr = cx . device . PWR ; let mut bkp = cx . device
-        . BKP ; let mut rtc = cx . device . RTC ; let mut lsi_hertz : u32 =
-        30_000 ; unsafe
+        split(& mut rcc . apb2) ; let mut pwr = cx . device . PWR ; let mut
+        bkp = cx . device . BKP ; let mut rtc = cx . device . RTC ; let mut
+        lsi_hertz : u32 = 30_000 ; unsafe
         {
             let pwr_ptr : * mut u32 = stm32f1xx_hal :: pac :: PWR :: ptr() as
             * mut u32 ; let rcc_ptr : * mut u32 = stm32f1xx_hal :: pac :: RCC
@@ -171,9 +169,10 @@
              }, clocks, & mut rcc . apb1, 1000, 10, 1000, 1000,) ; let
         interface = I2CDIBuilder :: new() . init(i2c) ; let mut display :
         GraphicsMode < _, _ > = Builder :: new() . connect(interface) . into()
-        ; delay(1_000_000) ; display . init() . unwrap() ; display . clear() ;
-        let _ = handle_adc :: spawn(true) ; let _ = beep :: spawn(70, 2) ; let
-        _ = update_display :: spawn(ScreenPage :: Boot) ;
+        ; delay(100_000) ; display . init() . unwrap() ; display . clear() ;
+        display . flush() . unwrap() ; let _ = handle_adc :: spawn(true) ; let
+        _ = beep :: spawn(70, 2) ; let _ = update_display ::
+        spawn(ScreenPage :: Boot) ;
         (init :: LateResources
          {
              display, button_start, button_brightness, EXTI : cx . device .
@@ -1951,11 +1950,11 @@
                     write(input) ; rtic :: export :: interrupt ::
                     free(| _ |
                          {
-                             crate :: app :: __rtic_internal_P3_RQ .
-                             enqueue_unchecked((crate :: app :: P3_T ::
+                             crate :: app :: __rtic_internal_P1_RQ .
+                             enqueue_unchecked((crate :: app :: P1_T ::
                                                 to_state, index)) ;
                          }) ; rtic ::
-                    pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL1) ;
+                    pend(stm32f1xx_hal :: pac :: interrupt :: DMA1_CHANNEL2) ;
                     Ok(())
                 } else { Err(input) }
             }
@@ -2278,7 +2277,7 @@
         (& mut self, f : impl FnOnce(& mut u16) -> RTIC_INTERNAL_R) ->
         RTIC_INTERNAL_R
         {
-            #[doc = r" Priority ceiling"] const CEILING : u8 = 3u8 ; unsafe
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 2u8 ; unsafe
             {
                 rtic :: export ::
                 lock(& mut __rtic_internal_max_time, self . priority(),
@@ -2293,7 +2292,7 @@
         (& mut self, f : impl FnOnce(& mut u8) -> RTIC_INTERNAL_R) ->
         RTIC_INTERNAL_R
         {
-            #[doc = r" Priority ceiling"] const CEILING : u8 = 3u8 ; unsafe
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 2u8 ; unsafe
             {
                 rtic :: export ::
                 lock(& mut __rtic_internal_disp_call_cnt, self . priority(),
@@ -2395,7 +2394,7 @@
         (& mut self, f : impl FnOnce(& mut PA9 < Output < PushPull > >) ->
          RTIC_INTERNAL_R) -> RTIC_INTERNAL_R
         {
-            #[doc = r" Priority ceiling"] const CEILING : u8 = 3u8 ; unsafe
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 1u8 ; unsafe
             {
                 rtic :: export ::
                 lock(__rtic_internal_sleep_pin . as_mut_ptr(), self .
@@ -2477,18 +2476,20 @@
             }
         }
     } #[doc(hidden)] static mut __rtic_internal_update_display_FQ : rtic ::
-    export :: SCFQ < rtic :: export :: consts :: U2 > = rtic :: export ::
+    export :: SCFQ < rtic :: export :: consts :: U4 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
     #[link_section = ".uninit.rtic13"] #[doc(hidden)] static mut
     __rtic_internal_update_display_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
-     8_000_000 > >> ; 2] =
+     8_000_000 > >> ; 3] =
     [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
-     uninit(),] ; #[link_section = ".uninit.rtic14"] #[doc(hidden)] static mut
+     uninit(), core :: mem :: MaybeUninit :: uninit(),] ;
+    #[link_section = ".uninit.rtic14"] #[doc(hidden)] static mut
     __rtic_internal_update_display_INPUTS :
-    [core :: mem :: MaybeUninit < ScreenPage > ; 2] =
+    [core :: mem :: MaybeUninit < ScreenPage > ; 3] =
     [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
-     uninit(),] ; impl < 'a > __rtic_internal_update_displayResources < 'a >
+     uninit(), core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
+    __rtic_internal_update_displayResources < 'a >
     {
         #[inline(always)] pub unsafe fn
         new(priority : & 'a rtic :: export :: Priority) -> Self
@@ -2620,9 +2621,10 @@
             }
         }
     } #[allow(non_camel_case_types)] #[derive(Clone, Copy)] #[doc(hidden)] pub
-    enum P1_T { beep, handle_adc, reset_display, unbeep, update_display, }
+    enum P1_T
+    { beep, handle_adc, reset_display, to_state, unbeep, update_display, }
     #[doc(hidden)] static mut __rtic_internal_P1_RQ : rtic :: export :: SCRQ <
-    P1_T, rtic :: export :: consts :: U16 > = rtic :: export ::
+    P1_T, rtic :: export :: consts :: U32 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
     #[allow(non_snake_case)]
     #[doc = "Interrupt handler to dispatch tasks at priority 1"] #[no_mangle]
@@ -2666,6 +2668,15 @@
                             new(PRIORITY) ; crate :: app ::
                             reset_display(reset_display :: Context ::
                                           new(priority))
+                        } P1_T :: to_state =>
+                        {
+                            let _0 = __rtic_internal_to_state_INPUTS .
+                            get_unchecked(usize :: from(index)) . as_ptr() .
+                            read() ; __rtic_internal_to_state_FQ . split() . 0
+                            . enqueue_unchecked(index) ; let priority = & rtic
+                            :: export :: Priority :: new(PRIORITY) ; crate ::
+                            app ::
+                            to_state(to_state :: Context :: new(priority), _0)
                         } P1_T :: unbeep =>
                         {
                             let(_0, _1,) = __rtic_internal_unbeep_INPUTS .
@@ -2690,10 +2701,9 @@
                 }
             }) ;
     } #[allow(non_camel_case_types)] #[derive(Clone, Copy)] #[doc(hidden)] pub
-    enum P3_T { kick_dog, to_state, } #[doc(hidden)] static mut
-    __rtic_internal_P3_RQ : rtic :: export :: SCRQ < P3_T, rtic :: export ::
-    consts :: U2 > = rtic :: export ::
-    Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
+    enum P3_T { kick_dog, } #[doc(hidden)] static mut __rtic_internal_P3_RQ :
+    rtic :: export :: SCRQ < P3_T, rtic :: export :: consts :: U1 > = rtic ::
+    export :: Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
     #[allow(non_snake_case)]
     #[doc = "Interrupt handler to dispatch tasks at priority 3"] #[no_mangle]
     unsafe fn DMA1_CHANNEL1()
@@ -2716,15 +2726,6 @@
                             :: export :: Priority :: new(PRIORITY) ; crate ::
                             app ::
                             kick_dog(kick_dog :: Context :: new(priority))
-                        } P3_T :: to_state =>
-                        {
-                            let _0 = __rtic_internal_to_state_INPUTS .
-                            get_unchecked(usize :: from(index)) . as_ptr() .
-                            read() ; __rtic_internal_to_state_FQ . split() . 0
-                            . enqueue_unchecked(index) ; let priority = & rtic
-                            :: export :: Priority :: new(PRIORITY) ; crate ::
-                            app ::
-                            to_state(to_state :: Context :: new(priority), _0)
                         }
                     }
                 }
@@ -2737,7 +2738,7 @@
         to_state,
     } #[doc(hidden)] static mut __rtic_internal_TQ_MyMono : core :: mem ::
     MaybeUninit < rtic :: export :: TimerQueue < DwtSystick < 8_000_000 >,
-    SCHED_T, rtic :: export :: consts :: U17 >> = core :: mem :: MaybeUninit
+    SCHED_T, rtic :: export :: consts :: U18 >> = core :: mem :: MaybeUninit
     :: uninit() ; #[doc(hidden)] static mut
     __rtic_internal_MONOTONIC_STORAGE_MyMono : Option < DwtSystick < 8_000_000
     > > = None ; #[no_mangle] #[allow(non_snake_case)] unsafe fn SysTick()
@@ -2803,11 +2804,11 @@
                 } SCHED_T :: to_state =>
                 {
                     rtic :: export :: interrupt ::
-                    free(| _ | __rtic_internal_P3_RQ . split() . 0 .
-                         enqueue_unchecked((P3_T :: to_state, index))) ; rtic
+                    free(| _ | __rtic_internal_P1_RQ . split() . 0 .
+                         enqueue_unchecked((P1_T :: to_state, index))) ; rtic
                     ::
                     pend(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
-                         :: interrupt :: DMA1_CHANNEL1) ;
+                         :: interrupt :: DMA1_CHANNEL2) ;
                 }
             }
         } rtic :: export :: interrupt ::
@@ -2839,7 +2840,7 @@
             < 8_000_000 > > () ; rtic :: export :: interrupt :: disable() ;
             (0 .. 1u8) .
             for_each(| i | __rtic_internal_handle_adc_FQ .
-                     enqueue_unchecked(i)) ; (0 .. 2u8) .
+                     enqueue_unchecked(i)) ; (0 .. 3u8) .
             for_each(| i | __rtic_internal_update_display_FQ .
                      enqueue_unchecked(i)) ; (0 .. 10u8) .
             for_each(| i | __rtic_internal_reset_display_FQ .

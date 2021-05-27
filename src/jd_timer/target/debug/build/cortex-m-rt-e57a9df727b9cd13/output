@@ -1,3 +1,0 @@
-cargo:rustc-link-search=/home/liakhova/Documents/ece341/junior_design/src/jd_timer/target/debug/build/cortex-m-rt-e57a9df727b9cd13/out
-cargo:rerun-if-changed=build.rs
-cargo:rerun-if-changed=link.x.in

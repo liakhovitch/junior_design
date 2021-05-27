@@ -1,2 +1,0 @@
-cargo:rustc-link-search=/home/liakhova/Documents/ece341/junior_design/src/jd_timer/target/thumbv7m-none-eabi/release/build/jd_timer-959a5018dd3bfb6a/out
-cargo:rerun-if-changed=memory.x

@@ -1,0 +1,2 @@
+cargo:rustc-env=TYPENUM_BUILD_CONSTS=/home/liakhova/Documents/ece341/junior_design/src/jd_timer/target/thumbv7m-none-eabi/debug/build/typenum-bf08ba33ef12300a/out/consts.rs
+cargo:rustc-env=TYPENUM_BUILD_OP=/home/liakhova/Documents/ece341/junior_design/src/jd_timer/target/thumbv7m-none-eabi/debug/build/typenum-bf08ba33ef12300a/out/op.rs

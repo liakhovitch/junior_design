@@ -1,0 +1,1 @@
+{"rustc":12138004636476574794,"features":"","target":0,"profile":0,"path":0,"deps":[[8769767560805237802,"build_script_build",false,13321641190300469710]],"local":[{"RerunIfChanged":{"output":"thumbv7m-none-eabi/debug/build/stm32f1-08aabd32de2b1624/output","paths":["src/stm32f103/device.x","build.rs"]}}],"rustflags":[],"metadata":0,"config":0,"compile_kind":0}

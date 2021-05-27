@@ -1,0 +1,3 @@
+cargo:rustc-link-search=/home/liakhova/Documents/ece341/junior_design/src/jd_timer/target/thumbv7m-none-eabi/debug/build/stm32f1-08aabd32de2b1624/out
+cargo:rerun-if-changed=src/stm32f103/device.x
+cargo:rerun-if-changed=build.rs

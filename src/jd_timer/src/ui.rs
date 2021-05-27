@@ -3,6 +3,8 @@ use crate::app::*;
 use crate::types::{ScreenPage, SysState};
 use crate::config::{HARD_BOILED, SOFT_BOILED};
 use crate::logo::LOGO;
+use crate::bigbolt::BIGBOLT;
+use crate::smallbolt::SMALLBOLT;
 use crate::rtc_util;
 
 use rtic::Mutex;
@@ -19,6 +21,9 @@ use embedded_graphics::{
     style::TextStyle,
     image::{Image, ImageRaw},
 };
+
+use embedded_hal::digital::v2::InputPin;
+
 use core::fmt::Write;
 use heapless::String;
 use heapless::consts::*;
@@ -32,15 +37,28 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
         (cx.resources.display, cx.resources.brightness_state);
     let mut max_time = cx.resources.max_time;
     let mut disp_call_cnt = cx.resources.disp_call_cnt;
+    let mut chg_pin = cx.resources.chg_pin;
     let mut rtc = cx.resources.rtc;
 
     display.lock(|display| {
+        // Wipe the slate
+        display.clear();
+        let chg_state:bool = chg_pin.lock(|chg_pin|{
+            return chg_pin.is_low().unwrap();
+        });
+        // Are we charging?
+        if chg_state == true {
+            // If we're charging, show little bolt icon in the corner
+            let raw_image: ImageRaw<BinaryColor> = ImageRaw::new(SMALLBOLT, 14, 14);
+            Image::new(&raw_image, Point::new(114,0))
+                .draw(display)
+                .unwrap();
+        }
         match screen_type {
             // Display the time set screen
             ScreenPage::Setup => {
                 disp_call_cnt.lock(|disp_call_cnt|{*disp_call_cnt = 0});
                 max_time.lock(|max_time| {
-                    display.clear();
                     // Format the text
                     let mut data = String::<U16>::from("");
                     let minutes = *max_time/60;
@@ -79,9 +97,11 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
             // Display the countdown screen
             ScreenPage::Timer => {
                 disp_call_cnt.lock(|disp_call_cnt|{*disp_call_cnt = 0});
+                let mut show_start_msg: bool = false;
                 let time_remaining: u16 = rtc.lock(|rtc| {
                     return max_time.lock(|max_time|{
                         let current_time = rtc_util::current_time(rtc) as u16;
+                        if current_time == 0 {show_start_msg = true}
                         if current_time <= *max_time {
                             return *max_time - current_time
                         } else {
@@ -89,24 +109,26 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
                         }
                     });
                 });
-                display.clear();
-                // Format the text
-                let mut data = String::<U16>::from("");
-                let minutes = time_remaining/60;
-                let seconds = time_remaining%60;
-                let _ = write!(data, "{:>2}:{:>02}", minutes, seconds);
 
-                // Create the graphics object and draw it on the "buffer"
-                Text::new(&data[..], Point::new(20,16))
-                    .into_styled(TextStyle::new(ProFont24Point, BinaryColor::On))
-                    .draw(display)
-                    .unwrap();
+                if show_start_msg == true {
+                    // Create the graphics object and draw it on the "buffer"
+                    Text::new("START", Point::new(20,16))
+                        .into_styled(TextStyle::new(ProFont24Point, BinaryColor::On))
+                        .draw(display)
+                        .unwrap();
+                } else {
+                    // Format the text
+                    let mut data = String::<U16>::from("");
+                    let minutes = time_remaining/60;
+                    let seconds = time_remaining%60;
+                    let _ = write!(data, "{:>2}:{:>02}", minutes, seconds);
 
-                // Render constant status message
-                /*Text::new("Timer time:", Point::new(10,0))
-                    .into_styled(TextStyle::new(ProFont14Point, BinaryColor::On))
-                    .draw(display)
-                    .unwrap();*/
+                    // Create the graphics object and draw it on the "buffer"
+                    Text::new(&data[..], Point::new(20,16))
+                        .into_styled(TextStyle::new(ProFont24Point, BinaryColor::On))
+                        .draw(display)
+                        .unwrap();
+                }
 
                 // Write buffer to display
                 display.flush().unwrap();
@@ -134,7 +156,6 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
                 let _ = reset_display::spawn_after(Seconds(2_u32));
             },
             ScreenPage::Alarm => {
-                display.clear();
                 Text::new("Alarm!", Point::new(20,16))
                     .into_styled(TextStyle::new(ProFont24Point, BinaryColor::On))
                     .draw(display)
@@ -175,14 +196,14 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
             },
             ScreenPage::Charging => {
                 display.clear();
-                let raw_image: ImageRaw<BinaryColor> = ImageRaw::new(LOGO, 128, 64);
+                let raw_image: ImageRaw<BinaryColor> = ImageRaw::new(BIGBOLT, 128, 64);
                 Image::new(&raw_image, Point::zero())
                     .draw(display)
                     .unwrap();
-                Text::new("Charging...", Point::new(20,44))
+                /*Text::new("", Point::new(20,44))
                     .into_styled(TextStyle::new(ProFont14Point, BinaryColor::On))
                     .draw(display)
-                    .unwrap();
+                    .unwrap();*/
                 // Write buffer to display
                 display.flush().unwrap();
             },

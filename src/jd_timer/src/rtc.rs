@@ -11,6 +11,8 @@ use stm32f1xx_hal::{
     rtc::Rtc,
 };
 
+use embedded_hal::digital::v2::InputPin;
+
 use cortex_m::asm::delay;
 
 // tick: triggered via interrupt every time the RTC counts down one second
@@ -20,6 +22,7 @@ pub fn tick(cx: tick::Context) {
         (cx.resources.sys_state, cx.resources.max_time);
     let mut disp_call_cnt = cx.resources.disp_call_cnt;
     let mut rtc = cx.resources.rtc;
+    let mut chg_pin = cx.resources.chg_pin;
     // Tiny arbitrary delay to ensure the RTC counter is updated.
     // For some reason the tick interrupt gets triggered just before the counter is updated.
     // It's in the manual but still odd.
@@ -31,9 +34,24 @@ pub fn tick(cx: tick::Context) {
                 let current_time:u16 = rtc.lock(|rtc|{
                     return rtc_util::current_time(rtc) as u16;
                 });
+                let chg_state:bool = chg_pin.lock(|chg_pin|{
+                    return chg_pin.is_low().unwrap();
+                });
+
                 // Is it time to fall asleep?
                 if current_time >= SLEEP_TIME {
-                    let _ = to_state::spawn(SysState::Sleep);
+                    // Is the device charging right now?
+                    if chg_state == true {
+                        // If charging, show icon fullscreen and reset sleep timer
+                        rtc.lock(|rtc|{
+                            rtc_util::set_time(rtc,0);
+                        });
+                        let _ = update_display::spawn(ScreenPage::Charging);
+
+                    } else {
+                        // If not charging, got to sleep
+                        let _ = to_state::spawn(SysState::Sleep);
+                    }
                 }
             }
             SysState::Timer => {

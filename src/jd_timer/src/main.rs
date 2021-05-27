@@ -13,9 +13,15 @@ mod rtc;
 mod beep;
 mod types;
 mod config;
-mod logo;
 mod states;
 mod rtc_util;
+mod charge;
+#[path = "./bitmaps/bigbolt.rs"]
+mod bigbolt;
+#[path = "./bitmaps/smallbolt.rs"]
+mod smallbolt;
+#[path = "./bitmaps/logo.rs"]
+mod logo;
 
 #[rtic::app(device = stm32f1xx_hal::pac,
 peripherals = true, dispatchers = [DMA1_CHANNEL1,DMA1_CHANNEL2,DMA1_CHANNEL3])]
@@ -30,6 +36,7 @@ mod app {
     use crate::beep::*;
     use crate::rtc::*;
     use crate::states::*;
+    use crate::charge::*;
     // My modified version of the stm32f1xx_hal RTC library
     use crate::rtc_util;
 
@@ -100,6 +107,7 @@ mod app {
         display: GraphicsMode<I2CInterface<BlockingI2c<I2C1, (PB8<Alternate<OpenDrain>>,PB9<Alternate<OpenDrain>>) >>, DisplaySize128x64>,
         button_start: PB5<Input<PullUp>>,
         button_brightness: PB6<Input<PullUp>>,
+        chg_pin: PA10<Input<PullUp>>,
         EXTI: stm32f1xx_hal::pac::EXTI,
         clocks: stm32f1xx_hal::rcc::Clocks,
         adc1: Adc<ADC1>,
@@ -336,6 +344,15 @@ mod app {
         // Tell the PMIC to please not shut us off
         sleep_pin.set_high().unwrap();
 
+// ------------------
+// Init PMIC feedback
+// ------------------
+        let mut chg_pin = gpioa.pa10.into_pull_up_input(&mut gpioa.crh);
+        chg_pin.make_interrupt_source(&mut afio);
+        chg_pin.trigger_on_edge(&cx.device.EXTI, RISING_FALLING);
+        chg_pin.enable_interrupt(&cx.device.EXTI);
+        // This will use interrupt EXTI15_10
+
 // ------------
 // Init buzzer
 // ------------
@@ -396,6 +413,7 @@ mod app {
         (init::LateResources {
             display,
             button_start, button_brightness,
+            chg_pin,
             EXTI: cx.device.EXTI,
             clocks,
             adc1,
@@ -430,9 +448,11 @@ mod app {
     extern "Rust" {
         #[task(binds = EXTI9_5, resources = [&clocks, button_start, button_brightness, EXTI, display, brightness_state, sys_state], priority=1)]
         fn handle_buttons(cx: handle_buttons::Context);
+        #[task(binds = EXTI15_10, resources = [chg_pin, disp_call_cnt], priority=1)]
+        fn handle_charge(cx: handle_charge::Context);
         #[task(resources = [pot, pot_pos, adc1, pot_dir, max_time], priority=1)]
         fn handle_adc(cx: handle_adc::Context, silent:bool);
-        #[task(resources = [rtc, display, max_time, brightness_state, disp_call_cnt], priority=1, capacity=3)]
+        #[task(resources = [rtc, display, max_time, brightness_state, disp_call_cnt, chg_pin], priority=1, capacity=3)]
         fn update_display(cx: update_display::Context, screen_type:ScreenPage);
         #[task(resources = [disp_call_cnt, sys_state], priority=1, capacity=10)]
         fn reset_display(cx: reset_display::Context);
@@ -440,7 +460,7 @@ mod app {
         fn beep(cx: beep::Context, length: u32, count: u8);
         #[task(resources = [buzzer], priority=2, capacity=1)]
         fn unbeep(cx: unbeep::Context, length: u32, count: u8);
-        #[task(binds = RTC, resources = [rtc, sys_state, max_time, disp_call_cnt], priority=2)]
+        #[task(binds = RTC, resources = [rtc, sys_state, max_time, disp_call_cnt, chg_pin], priority=2)]
         fn tick(cx: tick::Context);
         #[task(resources = [rtc, sys_state], priority=3, capacity=1)]
         fn kick_dog(cx: kick_dog::Context);

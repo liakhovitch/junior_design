@@ -18,6 +18,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: charge :: * ;
             #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -80,8 +81,8 @@
         }
     } use crate :: buttons :: * ; use crate :: pot :: * ; use crate :: ui :: *
     ; use crate :: types :: * ; use crate :: beep :: * ; use crate :: rtc :: *
-    ; use crate :: states :: * ; use crate :: rtc_util ; use crate :: config
-    :: { SLEEP_TIME } ; use stm32f1xx_hal ::
+    ; use crate :: states :: * ; use crate :: charge :: * ; use crate ::
+    rtc_util ; use crate :: config :: { SLEEP_TIME } ; use stm32f1xx_hal ::
     {
         adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
         {
@@ -182,7 +183,11 @@
         pa4 . into_analog(& mut gpioa . crl) ; let mut pot_pos = adc1 .
         read(& mut pot) . unwrap() ; pot_pos = pot_pos >> 4 ; let mut
         sleep_pin = gpioa . pa9 . into_push_pull_output(& mut gpioa . crh) ;
-        sleep_pin . set_high() . unwrap() ; let buzz0 = gpioa . pa0 .
+        sleep_pin . set_high() . unwrap() ; let mut chg_pin = gpioa . pa10 .
+        into_pull_up_input(& mut gpioa . crh) ; chg_pin .
+        make_interrupt_source(& mut afio) ; chg_pin .
+        trigger_on_edge(& cx . device . EXTI, RISING_FALLING) ; chg_pin .
+        enable_interrupt(& cx . device . EXTI) ; let buzz0 = gpioa . pa0 .
         into_alternate_push_pull(& mut gpioa . crl) ; let mut buzz1 = gpioa .
         pa1 . into_push_pull_output(& mut gpioa . crl) ; buzz1 . set_low() .
         unwrap() ; let mut buzzer = Timer ::
@@ -204,8 +209,9 @@
         spawn(70, 2) ; let _ = update_display :: spawn(ScreenPage :: Boot) ;
         (init :: LateResources
          {
-             display, button_start, button_brightness, EXTI : cx . device .
-             EXTI, clocks, adc1, pot, pot_pos, sleep_pin, buzzer, rtc,
+             display, button_start, button_brightness, chg_pin, EXTI : cx .
+             device . EXTI, clocks, adc1, pot, pot_pos, sleep_pin, buzzer,
+             rtc,
          }, init :: Monotonics(mono))
     } #[allow(non_snake_case)] fn idle(cx : idle :: Context) -> !
     {
@@ -228,6 +234,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: charge :: * ;
         #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -266,9 +273,9 @@
             pub EXTI : stm32f1xx_hal :: pac :: EXTI, pub adc1 : Adc < ADC1 >,
             pub button_brightness : PB6 < Input < PullUp > >, pub button_start
             : PB5 < Input < PullUp > >, pub buzzer : stm32f1xx_hal :: pwm ::
-            PwmChannel < TIM2, C1 >, pub clocks : stm32f1xx_hal :: rcc ::
-            Clocks, pub display : GraphicsMode < I2CInterface < BlockingI2c <
-            I2C1,
+            PwmChannel < TIM2, C1 >, pub chg_pin : PA10 < Input < PullUp > >,
+            pub clocks : stm32f1xx_hal :: rcc :: Clocks, pub display :
+            GraphicsMode < I2CInterface < BlockingI2c < I2C1,
             (PB8 < Alternate < OpenDrain > >, PB9 < Alternate < OpenDrain > >)
             > >, DisplaySize128x64 >, pub pot : PA4 < Analog >, pub pot_pos :
             u16, pub rtc : stm32f1xx_hal :: pac :: RTC, pub sleep_pin : PA9 <
@@ -306,6 +313,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: charge :: * ;
         #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -394,6 +402,18 @@
             #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
             Self { brightness_state { priority } } #[inline(always)] pub
             unsafe fn priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct chg_pin < 'a >
+        { priority : & 'a Priority, } impl < 'a > chg_pin < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { chg_pin { priority } } #[inline(always)] pub unsafe fn
+            priority(& self) -> & Priority { self . priority }
+        } #[allow(non_camel_case_types)] pub struct disp_call_cnt < 'a >
+        { priority : & 'a Priority, } impl < 'a > disp_call_cnt < 'a >
+        {
+            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
+            Self { disp_call_cnt { priority } } #[inline(always)] pub unsafe
+            fn priority(& self) -> & Priority { self . priority }
         } #[allow(non_camel_case_types)] pub struct rtc < 'a >
         { priority : & 'a Priority, } impl < 'a > rtc < 'a >
         {
@@ -406,12 +426,6 @@
             #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
             Self { max_time { priority } } #[inline(always)] pub unsafe fn
             priority(& self) -> & Priority { self . priority }
-        } #[allow(non_camel_case_types)] pub struct disp_call_cnt < 'a >
-        { priority : & 'a Priority, } impl < 'a > disp_call_cnt < 'a >
-        {
-            #[inline(always)] pub unsafe fn new(priority : & 'a Priority) ->
-            Self { disp_call_cnt { priority } } #[inline(always)] pub unsafe
-            fn priority(& self) -> & Priority { self . priority }
         } #[allow(non_camel_case_types)] pub struct pot < 'a >
         { priority : & 'a Priority, } impl < 'a > pot < 'a >
         {
@@ -468,6 +482,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: charge :: * ;
         #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -511,12 +526,72 @@
             new(priority : & 'a rtic :: export :: Priority) -> Self
             { Context { resources : Resources :: new(priority), } }
         }
+    } #[allow(non_snake_case)]
+    #[doc = "Resources `handle_charge` has access to"] pub struct
+    __rtic_internal_handle_chargeResources < 'a >
+    {
+        pub chg_pin : resources :: chg_pin < 'a >, pub disp_call_cnt :
+        resources :: disp_call_cnt < 'a >,
+    } #[allow(non_snake_case)] #[doc = "Hardware task"] pub mod handle_charge
+    {
+        #[allow(unused_imports)] use crate :: buttons :: * ;
+        #[allow(unused_imports)] use crate :: pot :: * ;
+        #[allow(unused_imports)] use crate :: ui :: * ;
+        #[allow(unused_imports)] use crate :: types :: * ;
+        #[allow(unused_imports)] use crate :: beep :: * ;
+        #[allow(unused_imports)] use crate :: rtc :: * ;
+        #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: charge :: * ;
+        #[allow(unused_imports)] use crate :: rtc_util ;
+        #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
+        #[allow(unused_imports)] use stm32f1xx_hal ::
+        {
+            adc :: { Adc, SampleTime }, prelude :: *, serial, gpio ::
+            {
+                gpiob :: { PB8, PB9, PB6, PB5 }, gpioa ::
+                { PA0, PA1, PA4, PA9, PA10 }, { Output, PushPull },
+                { Input, PullUp }, { Alternate, OpenDrain }, Edge :: *,
+                ExtiPin, Analog,
+            }, timer :: { Event, Timer, Tim2NoRemap }, pac ::
+            { I2C1, USART1, ADC1, TIM2 }, i2c ::
+            { BlockingI2c, DutyCycle, Mode }, pwm :: C1, rtc :: Rtc,
+        } ; #[allow(unused_imports)] use dwt_systick_monotonic :: DwtSystick ;
+        #[allow(unused_imports)] use cortex_m :: asm :: delay ;
+        #[allow(unused_imports)] use ssd1306 ::
+        { prelude :: *, Builder, I2CDIBuilder, } ; #[allow(unused_imports)]
+        use embedded_graphics ::
+        {
+            fonts :: Text, pixelcolor :: BinaryColor, prelude :: *, style ::
+            TextStyle,
+        } ; #[allow(unused_imports)] use profont :: ProFont24Point ;
+        #[allow(unused_imports)] use embedded_hal :: digital :: v2 ::
+        { OutputPin, InputPin } ; #[allow(unused_imports)] use core :: fmt ::
+        Write ; #[allow(unused_imports)] use core :: future :: Future ;
+        #[allow(unused_imports)] use core :: ptr :: * ;
+        #[allow(unused_imports)] use rtic :: rtic_monotonic ::
+        { Clock, Milliseconds, Nanoseconds } ; #[allow(unused_imports)] use
+        embedded_time :: duration :: * ; #[allow(unused_imports)] use core ::
+        convert :: TryFrom ; #[allow(unused_imports)] use rtic ::
+        rtic_monotonic :: embedded_time :: fixed_point :: FixedPoint ;
+        #[allow(unused_imports)] use rtic :: Monotonic ; #[doc(inline)] pub
+        use super :: __rtic_internal_handle_chargeResources as Resources ;
+        #[doc = r" Execution context"] pub struct Context < 'a >
+        {
+            #[doc = r" Resources this task has access to"] pub resources :
+            Resources < 'a >,
+        } impl < 'a > Context < 'a >
+        {
+            #[inline(always)] pub unsafe fn
+            new(priority : & 'a rtic :: export :: Priority) -> Self
+            { Context { resources : Resources :: new(priority), } }
+        }
     } #[allow(non_snake_case)] #[doc = "Resources `tick` has access to"] pub
     struct __rtic_internal_tickResources < 'a >
     {
         pub rtc : resources :: rtc < 'a >, pub sys_state : resources ::
         sys_state < 'a >, pub max_time : resources :: max_time < 'a >, pub
-        disp_call_cnt : resources :: disp_call_cnt < 'a >,
+        disp_call_cnt : resources :: disp_call_cnt < 'a >, pub chg_pin :
+        resources :: chg_pin < 'a >,
     } #[allow(non_snake_case)] #[doc = "Hardware task"] pub mod tick
     {
         #[allow(unused_imports)] use crate :: buttons :: * ;
@@ -526,6 +601,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: charge :: * ;
         #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -584,6 +660,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: charge :: * ;
         #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -661,6 +738,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: charge :: * ;
             #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -816,7 +894,8 @@
         pub rtc : resources :: rtc < 'a >, pub display : resources :: display
         < 'a >, pub max_time : resources :: max_time < 'a >, pub
         brightness_state : resources :: brightness_state < 'a >, pub
-        disp_call_cnt : resources :: disp_call_cnt < 'a >,
+        disp_call_cnt : resources :: disp_call_cnt < 'a >, pub chg_pin :
+        resources :: chg_pin < 'a >,
     } #[allow(non_snake_case)] #[doc = "Software task"] pub mod update_display
     {
         #[allow(unused_imports)] use crate :: buttons :: * ;
@@ -826,6 +905,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: charge :: * ;
         #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -903,6 +983,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: charge :: * ;
             #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -1067,6 +1148,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: charge :: * ;
         #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -1144,6 +1226,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: charge :: * ;
             #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -1304,6 +1387,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: charge :: * ;
         #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -1381,6 +1465,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: charge :: * ;
             #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -1543,6 +1628,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: charge :: * ;
         #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -1620,6 +1706,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: charge :: * ;
             #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -1784,6 +1871,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: charge :: * ;
         #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -1861,6 +1949,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: charge :: * ;
             #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -2025,6 +2114,7 @@
         #[allow(unused_imports)] use crate :: beep :: * ;
         #[allow(unused_imports)] use crate :: rtc :: * ;
         #[allow(unused_imports)] use crate :: states :: * ;
+        #[allow(unused_imports)] use crate :: charge :: * ;
         #[allow(unused_imports)] use crate :: rtc_util ;
         #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
         #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -2102,6 +2192,7 @@
             #[allow(unused_imports)] use crate :: beep :: * ;
             #[allow(unused_imports)] use crate :: rtc :: * ;
             #[allow(unused_imports)] use crate :: states :: * ;
+            #[allow(unused_imports)] use crate :: charge :: * ;
             #[allow(unused_imports)] use crate :: rtc_util ;
             #[allow(unused_imports)] use crate :: config :: { SLEEP_TIME } ;
             #[allow(unused_imports)] use stm32f1xx_hal ::
@@ -2389,7 +2480,41 @@
             }
         }
     } #[allow(non_upper_case_globals)] #[doc(hidden)]
-    #[link_section = ".uninit.rtic5"] static mut __rtic_internal_rtc : core ::
+    #[link_section = ".uninit.rtic5"] static mut __rtic_internal_chg_pin :
+    core :: mem :: MaybeUninit < PA10 < Input < PullUp > > > = core :: mem ::
+    MaybeUninit :: uninit() ; impl < 'a > rtic :: Mutex for resources ::
+    chg_pin < 'a >
+    {
+        type T = PA10 < Input < PullUp > > ; #[inline(always)] fn lock <
+        RTIC_INTERNAL_R >
+        (& mut self, f : impl FnOnce(& mut PA10 < Input < PullUp > >) ->
+         RTIC_INTERNAL_R) -> RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 2u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(__rtic_internal_chg_pin . as_mut_ptr(), self .
+                     priority(), CEILING, stm32f1xx_hal :: pac ::
+                     NVIC_PRIO_BITS, f,)
+            }
+        }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)] static mut
+    __rtic_internal_disp_call_cnt : u8 = 0 ; impl < 'a > rtic :: Mutex for
+    resources :: disp_call_cnt < 'a >
+    {
+        type T = u8 ; #[inline(always)] fn lock < RTIC_INTERNAL_R >
+        (& mut self, f : impl FnOnce(& mut u8) -> RTIC_INTERNAL_R) ->
+        RTIC_INTERNAL_R
+        {
+            #[doc = r" Priority ceiling"] const CEILING : u8 = 2u8 ; unsafe
+            {
+                rtic :: export ::
+                lock(& mut __rtic_internal_disp_call_cnt, self . priority(),
+                     CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
+            }
+        }
+    } #[allow(non_upper_case_globals)] #[doc(hidden)]
+    #[link_section = ".uninit.rtic6"] static mut __rtic_internal_rtc : core ::
     mem :: MaybeUninit < stm32f1xx_hal :: pac :: RTC > = core :: mem ::
     MaybeUninit :: uninit() ; impl < 'a > rtic :: Mutex for resources :: rtc <
     'a >
@@ -2421,23 +2546,8 @@
                      CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
             }
         }
-    } #[allow(non_upper_case_globals)] #[doc(hidden)] static mut
-    __rtic_internal_disp_call_cnt : u8 = 0 ; impl < 'a > rtic :: Mutex for
-    resources :: disp_call_cnt < 'a >
-    {
-        type T = u8 ; #[inline(always)] fn lock < RTIC_INTERNAL_R >
-        (& mut self, f : impl FnOnce(& mut u8) -> RTIC_INTERNAL_R) ->
-        RTIC_INTERNAL_R
-        {
-            #[doc = r" Priority ceiling"] const CEILING : u8 = 2u8 ; unsafe
-            {
-                rtic :: export ::
-                lock(& mut __rtic_internal_disp_call_cnt, self . priority(),
-                     CEILING, stm32f1xx_hal :: pac :: NVIC_PRIO_BITS, f,)
-            }
-        }
     } #[allow(non_upper_case_globals)] #[doc(hidden)]
-    #[link_section = ".uninit.rtic6"] static mut __rtic_internal_pot : core ::
+    #[link_section = ".uninit.rtic7"] static mut __rtic_internal_pot : core ::
     mem :: MaybeUninit < PA4 < Analog > > = core :: mem :: MaybeUninit ::
     uninit() ; impl < 'a > rtic :: Mutex for resources :: pot < 'a >
     {
@@ -2454,7 +2564,7 @@
             }
         }
     } #[allow(non_upper_case_globals)] #[doc(hidden)]
-    #[link_section = ".uninit.rtic7"] static mut __rtic_internal_pot_pos :
+    #[link_section = ".uninit.rtic8"] static mut __rtic_internal_pot_pos :
     core :: mem :: MaybeUninit < u16 > = core :: mem :: MaybeUninit ::
     uninit() ; impl < 'a > rtic :: Mutex for resources :: pot_pos < 'a >
     {
@@ -2471,7 +2581,7 @@
             }
         }
     } #[allow(non_upper_case_globals)] #[doc(hidden)]
-    #[link_section = ".uninit.rtic8"] static mut __rtic_internal_adc1 : core
+    #[link_section = ".uninit.rtic9"] static mut __rtic_internal_adc1 : core
     :: mem :: MaybeUninit < Adc < ADC1 > > = core :: mem :: MaybeUninit ::
     uninit() ; impl < 'a > rtic :: Mutex for resources :: adc1 < 'a >
     {
@@ -2502,10 +2612,10 @@
             }
         }
     } #[allow(non_upper_case_globals)] #[doc(hidden)]
-    #[link_section = ".uninit.rtic9"] static mut __rtic_internal_buzzer : core
-    :: mem :: MaybeUninit < stm32f1xx_hal :: pwm :: PwmChannel < TIM2, C1 > >
-    = core :: mem :: MaybeUninit :: uninit() ; impl < 'a > rtic :: Mutex for
-    resources :: buzzer < 'a >
+    #[link_section = ".uninit.rtic10"] static mut __rtic_internal_buzzer :
+    core :: mem :: MaybeUninit < stm32f1xx_hal :: pwm :: PwmChannel < TIM2, C1
+    > > = core :: mem :: MaybeUninit :: uninit() ; impl < 'a > rtic :: Mutex
+    for resources :: buzzer < 'a >
     {
         type T = stm32f1xx_hal :: pwm :: PwmChannel < TIM2, C1 > ;
         #[inline(always)] fn lock < RTIC_INTERNAL_R >
@@ -2521,7 +2631,7 @@
             }
         }
     } #[allow(non_upper_case_globals)] #[doc(hidden)]
-    #[link_section = ".uninit.rtic10"] static mut __rtic_internal_sleep_pin :
+    #[link_section = ".uninit.rtic11"] static mut __rtic_internal_sleep_pin :
     core :: mem :: MaybeUninit < PA9 < Output < PushPull > > > = core :: mem
     :: MaybeUninit :: uninit() ; impl < 'a > rtic :: Mutex for resources ::
     sleep_pin < 'a >
@@ -2565,6 +2675,27 @@
                 sys_state :: new(priority),
             }
         }
+    } #[allow(non_snake_case)] #[no_mangle] unsafe fn EXTI15_10()
+    {
+        const PRIORITY : u8 = 1u8 ; rtic :: export ::
+        run(PRIORITY, ||
+            {
+                crate :: app ::
+                handle_charge(handle_charge :: Context ::
+                              new(& rtic :: export :: Priority ::
+                                  new(PRIORITY)))
+            }) ;
+    } impl < 'a > __rtic_internal_handle_chargeResources < 'a >
+    {
+        #[inline(always)] pub unsafe fn
+        new(priority : & 'a rtic :: export :: Priority) -> Self
+        {
+            __rtic_internal_handle_chargeResources
+            {
+                chg_pin : resources :: chg_pin :: new(priority), disp_call_cnt
+                : resources :: disp_call_cnt :: new(priority),
+            }
+        }
     } #[allow(non_snake_case)] #[no_mangle] unsafe fn RTC()
     {
         const PRIORITY : u8 = 2u8 ; rtic :: export ::
@@ -2584,17 +2715,18 @@
                 rtc : resources :: rtc :: new(priority), sys_state : resources
                 :: sys_state :: new(priority), max_time : resources ::
                 max_time :: new(priority), disp_call_cnt : resources ::
-                disp_call_cnt :: new(priority),
+                disp_call_cnt :: new(priority), chg_pin : resources :: chg_pin
+                :: new(priority),
             }
         }
     } #[doc(hidden)] static mut __rtic_internal_handle_adc_FQ : rtic :: export
     :: SCFQ < rtic :: export :: consts :: U1 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic11"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic12"] #[doc(hidden)] static mut
     __rtic_internal_handle_adc_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 1] = [core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic12"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic13"] #[doc(hidden)] static mut
     __rtic_internal_handle_adc_INPUTS :
     [core :: mem :: MaybeUninit < bool > ; 1] =
     [core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
@@ -2615,13 +2747,13 @@
     } #[doc(hidden)] static mut __rtic_internal_update_display_FQ : rtic ::
     export :: SCFQ < rtic :: export :: consts :: U4 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic13"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic14"] #[doc(hidden)] static mut
     __rtic_internal_update_display_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 3] =
     [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
      uninit(), core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic14"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic15"] #[doc(hidden)] static mut
     __rtic_internal_update_display_INPUTS :
     [core :: mem :: MaybeUninit < ScreenPage > ; 3] =
     [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
@@ -2637,13 +2769,14 @@
                 :: display :: new(priority), max_time : resources :: max_time
                 :: new(priority), brightness_state : resources ::
                 brightness_state :: new(priority), disp_call_cnt : resources
-                :: disp_call_cnt :: new(priority),
+                :: disp_call_cnt :: new(priority), chg_pin : resources ::
+                chg_pin :: new(priority),
             }
         }
     } #[doc(hidden)] static mut __rtic_internal_reset_display_FQ : rtic ::
     export :: SCFQ < rtic :: export :: consts :: U16 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic15"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic16"] #[doc(hidden)] static mut
     __rtic_internal_reset_display_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 10] =
@@ -2653,7 +2786,7 @@
      mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit :: uninit(),
      core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
      uninit(), core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic16"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic17"] #[doc(hidden)] static mut
     __rtic_internal_reset_display_INPUTS :
     [core :: mem :: MaybeUninit < () > ; 10] =
     [core :: mem :: MaybeUninit :: uninit(), core :: mem :: MaybeUninit ::
@@ -2676,11 +2809,11 @@
     } #[doc(hidden)] static mut __rtic_internal_beep_FQ : rtic :: export ::
     SCFQ < rtic :: export :: consts :: U1 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic17"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic18"] #[doc(hidden)] static mut
     __rtic_internal_beep_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 1] = [core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic18"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic19"] #[doc(hidden)] static mut
     __rtic_internal_beep_INPUTS :
     [core :: mem :: MaybeUninit < (u32, u8,) > ; 1] =
     [core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
@@ -2695,11 +2828,11 @@
     } #[doc(hidden)] static mut __rtic_internal_unbeep_FQ : rtic :: export ::
     SCFQ < rtic :: export :: consts :: U1 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic19"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic20"] #[doc(hidden)] static mut
     __rtic_internal_unbeep_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 1] = [core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic20"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic21"] #[doc(hidden)] static mut
     __rtic_internal_unbeep_INPUTS :
     [core :: mem :: MaybeUninit < (u32, u8,) > ; 1] =
     [core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
@@ -2714,11 +2847,11 @@
     } #[doc(hidden)] static mut __rtic_internal_kick_dog_FQ : rtic :: export
     :: SCFQ < rtic :: export :: consts :: U1 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic21"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic22"] #[doc(hidden)] static mut
     __rtic_internal_kick_dog_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 1] = [core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic22"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic23"] #[doc(hidden)] static mut
     __rtic_internal_kick_dog_INPUTS : [core :: mem :: MaybeUninit < () > ; 1]
     = [core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
     __rtic_internal_kick_dogResources < 'a >
@@ -2735,11 +2868,11 @@
     } #[doc(hidden)] static mut __rtic_internal_to_state_FQ : rtic :: export
     :: SCFQ < rtic :: export :: consts :: U1 > = rtic :: export ::
     Queue(unsafe { rtic :: export :: iQueue :: u8_sc() }) ;
-    #[link_section = ".uninit.rtic23"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic24"] #[doc(hidden)] static mut
     __rtic_internal_to_state_MyMono_INSTANTS :
     [core :: mem :: MaybeUninit < rtic :: time :: Instant < DwtSystick <
      8_000_000 > >> ; 1] = [core :: mem :: MaybeUninit :: uninit(),] ;
-    #[link_section = ".uninit.rtic24"] #[doc(hidden)] static mut
+    #[link_section = ".uninit.rtic25"] #[doc(hidden)] static mut
     __rtic_internal_to_state_INPUTS :
     [core :: mem :: MaybeUninit < SysState > ; 1] =
     [core :: mem :: MaybeUninit :: uninit(),] ; impl < 'a >
@@ -2983,20 +3116,21 @@
             > >, DisplaySize128x64 > > () ; rtic :: export :: assert_send :: <
             PB5 < Input < PullUp > > > () ; rtic :: export :: assert_send :: <
             PB6 < Input < PullUp > > > () ; rtic :: export :: assert_send :: <
-            stm32f1xx_hal :: pac :: EXTI > () ; rtic :: export :: assert_send
-            :: < stm32f1xx_hal :: rcc :: Clocks > () ; rtic :: export ::
-            assert_send :: < Adc < ADC1 > > () ; rtic :: export :: assert_send
-            :: < PA4 < Analog > > () ; rtic :: export :: assert_send :: < u16
-            > () ; rtic :: export :: assert_send :: < PA9 < Output < PushPull
-            > > > () ; rtic :: export :: assert_send :: < stm32f1xx_hal :: pwm
-            :: PwmChannel < TIM2, C1 > > () ; rtic :: export :: assert_send ::
-            < stm32f1xx_hal :: pac :: RTC > () ; rtic :: export :: assert_send
-            :: < bool > () ; rtic :: export :: assert_send :: < ScreenPage >
-            () ; rtic :: export :: assert_send :: < u32 > () ; rtic :: export
-            :: assert_send :: < u8 > () ; rtic :: export :: assert_send :: <
-            SysState > () ; rtic :: export :: assert_monotonic :: < DwtSystick
-            < 8_000_000 > > () ; rtic :: export :: interrupt :: disable() ;
-            (0 .. 1u8) .
+            PA10 < Input < PullUp > > > () ; rtic :: export :: assert_send ::
+            < stm32f1xx_hal :: pac :: EXTI > () ; rtic :: export ::
+            assert_send :: < stm32f1xx_hal :: rcc :: Clocks > () ; rtic ::
+            export :: assert_send :: < Adc < ADC1 > > () ; rtic :: export ::
+            assert_send :: < PA4 < Analog > > () ; rtic :: export ::
+            assert_send :: < u16 > () ; rtic :: export :: assert_send :: < PA9
+            < Output < PushPull > > > () ; rtic :: export :: assert_send :: <
+            stm32f1xx_hal :: pwm :: PwmChannel < TIM2, C1 > > () ; rtic ::
+            export :: assert_send :: < stm32f1xx_hal :: pac :: RTC > () ; rtic
+            :: export :: assert_send :: < bool > () ; rtic :: export ::
+            assert_send :: < ScreenPage > () ; rtic :: export :: assert_send
+            :: < u32 > () ; rtic :: export :: assert_send :: < u8 > () ; rtic
+            :: export :: assert_send :: < SysState > () ; rtic :: export ::
+            assert_monotonic :: < DwtSystick < 8_000_000 > > () ; rtic ::
+            export :: interrupt :: disable() ; (0 .. 1u8) .
             for_each(| i | __rtic_internal_handle_adc_FQ .
                      enqueue_unchecked(i)) ; (0 .. 3u8) .
             for_each(| i | __rtic_internal_update_display_FQ .
@@ -3053,6 +3187,16 @@
             unmask(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
                    :: interrupt :: EXTI9_5) ; let _ =
             [() ;
+             ((1 << stm32f1xx_hal :: pac :: NVIC_PRIO_BITS) - 1u8 as usize)] ;
+            core . NVIC .
+            set_priority(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
+                         :: interrupt :: EXTI15_10, rtic :: export ::
+                         logical2hw(1u8, stm32f1xx_hal :: pac ::
+                                    NVIC_PRIO_BITS),) ; rtic :: export :: NVIC
+            ::
+            unmask(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
+                   :: interrupt :: EXTI15_10) ; let _ =
+            [() ;
              ((1 << stm32f1xx_hal :: pac :: NVIC_PRIO_BITS) - 2u8 as usize)] ;
             core . NVIC .
             set_priority(you_must_enable_the_rt_feature_for_the_pac_in_your_cargo_toml
@@ -3083,7 +3227,8 @@
             __rtic_internal_button_brightness . as_mut_ptr() .
             write(late . button_brightness) ; __rtic_internal_button_start .
             as_mut_ptr() . write(late . button_start) ; __rtic_internal_buzzer
-            . as_mut_ptr() . write(late . buzzer) ; __rtic_internal_clocks .
+            . as_mut_ptr() . write(late . buzzer) ; __rtic_internal_chg_pin .
+            as_mut_ptr() . write(late . chg_pin) ; __rtic_internal_clocks .
             as_mut_ptr() . write(late . clocks) ; __rtic_internal_display .
             as_mut_ptr() . write(late . display) ; __rtic_internal_pot .
             as_mut_ptr() . write(late . pot) ; __rtic_internal_pot_pos .

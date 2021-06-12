@@ -43,6 +43,7 @@ pub fn set_time(rtc: &mut RTC, counter_value: u32) {
   Sets the time at which an alarm will be triggered
   This also clears the alarm flag if it is set
 */
+#[allow(dead_code)]
 pub fn set_alarm(rtc: &mut RTC, counter_value: u32) {
     // Set alarm time
     // See section 18.3.5 for explanation

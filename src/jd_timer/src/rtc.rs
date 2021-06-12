@@ -18,9 +18,7 @@ use cortex_m::asm::delay;
 // tick: triggered via interrupt every time the RTC counts down one second
 pub fn tick(cx: tick::Context) {
     // Bring resources into scope
-    let (mut sys_state, mut max_time) =
-        (cx.resources.sys_state, cx.resources.max_time);
-    let mut disp_call_cnt = cx.resources.disp_call_cnt;
+    let mut sys_state = cx.resources.sys_state;
     let mut rtc = cx.resources.rtc;
     let mut chg_pin = cx.resources.chg_pin;
     // Tiny arbitrary delay to ensure the RTC counter is updated.
@@ -54,31 +52,6 @@ pub fn tick(cx: tick::Context) {
                     }
                 }
             }
-            SysState::Timer => {
-                // Get current time
-                let current_time:u16 = rtc.lock(|rtc|{
-                    return rtc_util::current_time(rtc) as u16;
-                });
-                // Get maximum time (what the timer was set to)
-                let maximum_time:u16 = max_time.lock(|max_time|{return *max_time});
-                // Is the timer down to 0?
-                if current_time < maximum_time {
-                    // If timer is still running, update the display but only if nothing more
-                    //   important is currently showing
-                    let cnt:u8 = disp_call_cnt.lock(|disp_call_cnt|{
-                        return *disp_call_cnt;
-                    });
-                    if cnt == 0 {
-                        let _ = update_display::spawn(ScreenPage::Timer);
-                    }
-                } else {
-                    // If timer is down to zero, trigger alarm and return to main menu
-                    let _ = update_display::spawn(ScreenPage::Alarm);
-                    let _ = beep::spawn(500, 5);
-                    let _ = to_state::spawn(SysState::Setup);
-                }
-
-            }
             SysState::Sleep => {
                 // We dont really care what time it is when we're sleeping
             }
@@ -100,9 +73,6 @@ pub fn kick_dog(cx: kick_dog::Context) {
                     // Put off sleep timer when user interacts with device
                     rtc_util::set_time(rtc,0);
                 });
-            }
-            SysState::Timer => {
-                // Nothing to do
             }
             SysState::Sleep => {
                 // If the user moves some input while the system is going to sleep,

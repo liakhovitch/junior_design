@@ -22,7 +22,6 @@ pub fn to_state(cx: to_state::Context, target: SysState){
     // Bring resources into scope
     let (mut sys_state, mut sleep_pin) =
         (cx.resources.sys_state, cx.resources.sleep_pin);
-    let mut max_time = cx.resources.max_time;
     let mut disp_call_cnt = cx.resources.disp_call_cnt;
     let mut rtc = cx.resources.rtc;
     // Acquire display status message status
@@ -48,23 +47,6 @@ pub fn to_state(cx: to_state::Context, target: SysState){
                 if cnt == 0 {
                     let _ = update_display::spawn(ScreenPage::Setup);
                 }
-            }
-            SysState::Timer => {
-                // Set new system state
-                *sys_state = SysState::Timer;
-                // Reset RTC
-                rtc_util::set_time(rtc,0);
-                max_time.lock(|max_time| {
-                    // Set RTC alarm to trigger when timer runs out
-                    rtc_util::set_alarm(rtc,*max_time as u32);
-                });
-                // Configure RTC for use as egg timer
-                rtc_util::listen_seconds(rtc);
-                rtc_util::clear_second_flag(rtc);
-                // Make sure we aren't shutting off
-                sleep_pin.set_high().unwrap();
-                // Update the display
-                let _ = update_display::spawn(ScreenPage::Timer);
             }
             SysState::Sleep => {
                 // Update system state

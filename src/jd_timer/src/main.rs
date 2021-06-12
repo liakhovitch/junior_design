@@ -95,6 +95,8 @@ mod app {
     use rtic::rtic_monotonic::embedded_time::fixed_point::FixedPoint;
     use rtic::Monotonic;
 
+    use oorandom;
+
     // Declare type for monotonic timer used by RTIC for task scheduling
     #[monotonic(binds = SysTick, default = true)]
     type MyMono = DwtSystick<8_000_000>; // 8 MHz
@@ -123,11 +125,12 @@ mod app {
         #[init(SysState::Setup)]
         sys_state: SysState,
         #[init(0)]
-        max_time: u16,
+        max_num: u16,
         #[init(0)]
         time_remaining: u16,
         #[init(0)]
         disp_call_cnt: u8,
+        rng: oorandom::Rand32,
     }
 
     // Init function
@@ -398,6 +401,18 @@ mod app {
         display.clear();
         display.flush().unwrap();
 
+// --------
+// Init RNG
+// --------
+        // Setup adc2 with default settings
+        let mut adc2 = Adc::adc2(cx.device.ADC2, &mut rcc.apb2, clocks);
+        // Setup PA4 as analog input
+        //let mut pot = gpioa.pa4.into_analog(&mut gpioa.crl);
+        // Take initial read
+        let seed:u64 = adc2.read(&mut pot).unwrap();
+        //let seed:u64 = 5;
+        let rng = oorandom::Rand32::new(seed);
+
 // ------------------
 // Start bootup tasks
 // ------------------
@@ -422,6 +437,7 @@ mod app {
             sleep_pin,
             buzzer,
             rtc,
+            rng,
         },
          // Return timer object so RTIC can use it for task scheduling.
          init::Monotonics(mono))
@@ -429,15 +445,10 @@ mod app {
 
     // Idle task, run when nothing else is happening. This is where polling happens.
     #[idle(resources = [sys_state])]
-    fn idle(cx: idle::Context) -> ! {
-        let mut sys_state = cx.resources.sys_state;
+    fn idle(_cx: idle::Context) -> ! {
         loop {
             // Read off the ADC value
-            sys_state.lock(|sys_state| {
-                if *sys_state != SysState::Timer {
-                    let _ = handle_adc::spawn(false);
-                }
-            });
+            let _ = handle_adc::spawn(false);
         }
     }
 
@@ -450,9 +461,9 @@ mod app {
         fn handle_buttons(cx: handle_buttons::Context);
         #[task(binds = EXTI15_10, resources = [chg_pin, disp_call_cnt], priority=1)]
         fn handle_charge(cx: handle_charge::Context);
-        #[task(resources = [pot, pot_pos, adc1, pot_dir, max_time], priority=1)]
+        #[task(resources = [pot, pot_pos, adc1, pot_dir, max_num], priority=1)]
         fn handle_adc(cx: handle_adc::Context, silent:bool);
-        #[task(resources = [rtc, display, max_time, brightness_state, disp_call_cnt, chg_pin], priority=1, capacity=3)]
+        #[task(resources = [rtc, display, max_num, brightness_state, disp_call_cnt, chg_pin, rng], priority=1, capacity=3)]
         fn update_display(cx: update_display::Context, screen_type:ScreenPage);
         #[task(resources = [disp_call_cnt, sys_state], priority=1, capacity=10)]
         fn reset_display(cx: reset_display::Context);
@@ -460,11 +471,11 @@ mod app {
         fn beep(cx: beep::Context, length: u32, count: u8);
         #[task(resources = [buzzer], priority=2, capacity=1)]
         fn unbeep(cx: unbeep::Context, length: u32, count: u8);
-        #[task(binds = RTC, resources = [rtc, sys_state, max_time, disp_call_cnt, chg_pin], priority=2)]
+        #[task(binds = RTC, resources = [rtc, sys_state, disp_call_cnt, chg_pin], priority=2)]
         fn tick(cx: tick::Context);
         #[task(resources = [rtc, sys_state], priority=3, capacity=1)]
         fn kick_dog(cx: kick_dog::Context);
-        #[task(resources = [rtc, sys_state, sleep_pin, max_time, disp_call_cnt], priority=1, capacity=1)]
+        #[task(resources = [rtc, sys_state, sleep_pin, disp_call_cnt], priority=1, capacity=1)]
         fn to_state(cx: to_state::Context, target: SysState);
     }
 }

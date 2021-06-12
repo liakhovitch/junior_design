@@ -38,8 +38,6 @@ pub fn handle_buttons(cx: app::handle_buttons::Context){
     let (mut EXTI, mut display) =
     (cx.resources.EXTI, cx.resources.display);
     let mut brightness_state = cx.resources.brightness_state;
-    let mut sys_state = cx.resources.sys_state;
-    //let clocks = cx.resources.clocks;
 
     // Clear interrupt bits and disable interrupts
     EXTI.lock(|EXTI| {
@@ -70,20 +68,9 @@ pub fn handle_buttons(cx: app::handle_buttons::Context){
     if button_brightness_pressed == true || button_start_pressed == true {
 
         if button_start_pressed == true{
-            sys_state.lock(|sys_state|{
-                match sys_state {
-                    SysState::Setup => {
-                        let _ = to_state::spawn(SysState::Timer);
-                    }
-                    SysState::Timer => {
-                        let _ = to_state::spawn(SysState::Setup);
-                    }
-                    SysState::Sleep => {
-                        // The earlier dog-kicking code will have already handled this situation
-                    }
-                }
-            });
-            let _ = beep::spawn(100, 1);
+            let _ = update_display::spawn(ScreenPage::Number);
+            let _ = beep::spawn(200, 1);
+            let _ = to_state::spawn(SysState::Setup);
         } else if button_brightness_pressed == true {
             let mut brightness:Brightness = Brightness::DIM;
             brightness_state.lock(|brightness_state|{

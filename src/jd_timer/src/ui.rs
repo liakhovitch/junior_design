@@ -1,7 +1,6 @@
 use crate::app;
 use crate::app::*;
 use crate::types::{ScreenPage, SysState};
-use crate::config::{HARD_BOILED, SOFT_BOILED};
 use crate::logo::LOGO;
 use crate::bigbolt::BIGBOLT;
 use crate::smallbolt::SMALLBOLT;
@@ -31,14 +30,16 @@ use profont::ProFont24Point;
 use profont::ProFont14Point;
 use rtic::time::duration::Seconds;
 
+use oorandom;
+
 pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
     // Bring resources into scope
     let (mut display, mut brightness_state) =
         (cx.resources.display, cx.resources.brightness_state);
-    let mut max_time = cx.resources.max_time;
+    let mut max_num = cx.resources.max_num;
     let mut disp_call_cnt = cx.resources.disp_call_cnt;
     let mut chg_pin = cx.resources.chg_pin;
-    let mut rtc = cx.resources.rtc;
+    let mut rng = cx.resources.rng;
 
     display.lock(|display| {
         // Wipe the slate
@@ -58,34 +59,22 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
             // Display the time set screen
             ScreenPage::Setup => {
                 disp_call_cnt.lock(|disp_call_cnt|{*disp_call_cnt = 0});
-                max_time.lock(|max_time| {
+                max_num.lock(|max_num| {
                     // Format the text
                     let mut data = String::<U16>::from("");
-                    let minutes = *max_time/60;
-                    let seconds = *max_time%60;
-                    let _ = write!(data, "{:>2}:{:>02}", minutes, seconds);
+                    //let minutes = *max_num /60;
+                    //let seconds = *max_num %60;
+                    //let _ = write!(data, "{:>2}:{:>02}", minutes, seconds);
+                    let _ = write!(data, "{}", (*max_num+1));
 
                     // Create the graphics object and draw it on the "buffer"
-                    Text::new(&data[..], Point::new(20,16))
+                    Text::new(&data[..], Point::new(48,16))
                         .into_styled(TextStyle::new(ProFont24Point, BinaryColor::On))
                         .draw(display)
                         .unwrap();
 
-                    // Determine special status message for special time settings
-                    let status_msg: &str = match *max_time {
-                        SOFT_BOILED => "Soft-Boiled",
-                        HARD_BOILED => "Hard-Boiled",
-                        _ => "",
-                    };
-
-                    // Render special status message
-                    Text::new(status_msg, Point::new(10,48))
-                        .into_styled(TextStyle::new(ProFont14Point, BinaryColor::On))
-                        .draw(display)
-                        .unwrap();
-
                     // Render constant status message
-                    Text::new("Set Time:", Point::new(10,0))
+                    Text::new("Max number:", Point::new(10,0))
                         .into_styled(TextStyle::new(ProFont14Point, BinaryColor::On))
                         .draw(display)
                         .unwrap();
@@ -93,45 +82,6 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
                     // Write buffer to display
                     display.flush().unwrap();
                 });
-            },
-            // Display the countdown screen
-            ScreenPage::Timer => {
-                disp_call_cnt.lock(|disp_call_cnt|{*disp_call_cnt = 0});
-                let mut show_start_msg: bool = false;
-                let time_remaining: u16 = rtc.lock(|rtc| {
-                    return max_time.lock(|max_time|{
-                        let current_time = rtc_util::current_time(rtc) as u16;
-                        if current_time == 0 {show_start_msg = true}
-                        if current_time <= *max_time {
-                            return *max_time - current_time
-                        } else {
-                            return 0
-                        }
-                    });
-                });
-
-                if show_start_msg == true {
-                    // Create the graphics object and draw it on the "buffer"
-                    Text::new("START", Point::new(20,16))
-                        .into_styled(TextStyle::new(ProFont24Point, BinaryColor::On))
-                        .draw(display)
-                        .unwrap();
-                } else {
-                    // Format the text
-                    let mut data = String::<U16>::from("");
-                    let minutes = time_remaining/60;
-                    let seconds = time_remaining%60;
-                    let _ = write!(data, "{:>2}:{:>02}", minutes, seconds);
-
-                    // Create the graphics object and draw it on the "buffer"
-                    Text::new(&data[..], Point::new(20,16))
-                        .into_styled(TextStyle::new(ProFont24Point, BinaryColor::On))
-                        .draw(display)
-                        .unwrap();
-                }
-
-                // Write buffer to display
-                display.flush().unwrap();
             },
             ScreenPage::Brightness => {
                 display.clear();
@@ -155,15 +105,38 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
                 disp_call_cnt.lock(|disp_call_cnt|{*disp_call_cnt += 1});
                 let _ = reset_display::spawn_after(Seconds(2_u32));
             },
-            ScreenPage::Alarm => {
-                Text::new("Alarm!", Point::new(20,16))
-                    .into_styled(TextStyle::new(ProFont24Point, BinaryColor::On))
-                    .draw(display)
-                    .unwrap();
-                display.flush().unwrap();
+            ScreenPage::Number => {
+
+                rng.lock(|rng| {
+                max_num.lock(|max_num| {
+                    // Format the text
+                    let mut data = String::<U16>::from("");
+                    let mut num:u32 = 0;
+                    if *max_num > 0 {
+                        num = rng.rand_u32() % (*max_num as u32 + 1);
+                    }
+                    let _ = write!(data, "{}", (num + 1));
+
+                    // Create the graphics object and draw it on the "buffer"
+                    Text::new(&data[..], Point::new(48, 16))
+                        .into_styled(TextStyle::new(ProFont24Point, BinaryColor::On))
+                        .draw(display)
+                        .unwrap();
+
+                    // Render constant status message
+                    /*Text::new("Max number:", Point::new(10,0))
+                        .into_styled(TextStyle::new(ProFont14Point, BinaryColor::On))
+                        .draw(display)
+                        .unwrap();*/
+
+                    // Write buffer to display
+                    display.flush().unwrap();
+                });
+                });
+
                 // Schedule the screen to go back to what it was previously showing
                 disp_call_cnt.lock(|disp_call_cnt|{*disp_call_cnt += 1});
-                let _ = reset_display::spawn_after(Seconds(5_u32));
+                let _ = reset_display::spawn_after(Seconds(15_u32));
             },
             ScreenPage::Boot => {
                 display.clear();
@@ -171,7 +144,7 @@ pub fn update_display(cx: update_display::Context, screen_type:ScreenPage){
                 Image::new(&raw_image, Point::zero())
                     .draw(display)
                     .unwrap();
-                Text::new("Egg Timer!", Point::new(20,44))
+                Text::new("Dice Roller!", Point::new(10,44))
                     .into_styled(TextStyle::new(ProFont14Point, BinaryColor::On))
                     .draw(display)
                     .unwrap();
@@ -223,7 +196,6 @@ pub fn reset_display(cx: reset_display::Context) {
            sys_state.lock(|sys_state|{
                match *sys_state {
                    SysState::Setup => { let _ = update_display::spawn(ScreenPage::Setup); },
-                   SysState::Timer => { let _ = update_display::spawn(ScreenPage::Timer); },
                    SysState::Sleep => { let _ = update_display::spawn(ScreenPage::Sleep); },
                }
            });

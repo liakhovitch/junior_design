@@ -1,7 +1,7 @@
 use crate::app;
 use crate::app::*;
 use crate::types::ScreenPage;
-use crate::config::{MAX_TIME, TIME_STEPS};
+use crate::config::{MAX_NUM, NUM_STEPS};
 
 use rtic::Mutex;
 
@@ -43,7 +43,7 @@ pub fn handle_adc(cx: app::handle_adc::Context, silent:bool){
         (cx.resources.pot, cx.resources.adc1);
     let mut pot_pos = cx.resources.pot_pos;
     let mut pot_dir = cx.resources.pot_dir;
-    let mut max_time = cx.resources.max_time;
+    let mut max_num = cx.resources.max_num;
 
     let mut pot_pos_new:u16 = 0;
     let mut sample_sum:u16 = 0;
@@ -86,16 +86,16 @@ pub fn handle_adc(cx: app::handle_adc::Context, silent:bool){
                 if pot_pos_new > *pot_pos {*pot_dir = true}
                 else {*pot_dir = false}
                 // Convert old pot position into time
-                let max_time_old:u16 = (((MAX_TIME/TIME_STEPS)*(255_u16-*pot_pos))/255)*TIME_STEPS;
+                let max_num_old:u16 = (((MAX_NUM / NUM_STEPS)*(255_u16-*pot_pos))/255)* NUM_STEPS;
                 // Update pot position
                 *pot_pos = pot_pos_new;
                 // Convert new pot position into time
-                let max_time_new:u16 = (((MAX_TIME/TIME_STEPS)*(255_u16-*pot_pos))/255)*TIME_STEPS;
+                let max_num_new:u16 = (((MAX_NUM / NUM_STEPS)*(255_u16-*pot_pos))/255)* NUM_STEPS;
                 // Only update the display if the pot has moved enough to change the time
-                if max_time_old != max_time_new {
+                if max_num_old != max_num_new {
                     // Update the time remaining on the clock
-                    max_time.lock(|max_time|{
-                        *max_time = max_time_new;
+                    max_num.lock(|max_num|{
+                        *max_num = max_num_new;
                     });
                     // Kick the dog
                     let _ = kick_dog::spawn();

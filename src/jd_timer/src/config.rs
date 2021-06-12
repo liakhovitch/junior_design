@@ -1,12 +1,8 @@
 // General configuration file for defining constants that might need tweaking.
 
-// Maximum time user can set on the timer
-pub const MAX_TIME: u16 = 900;
-// Time steps to increment time by
-pub const TIME_STEPS: u16 = 15;
-// Time it takes to cook a soft-boiled egg
-pub const SOFT_BOILED: u16 = 240;
-// Time it takes to cook a hard-boiled egg
-pub const HARD_BOILED: u16 = 600;
+// Maximum random number
+pub const MAX_NUM: u16 = 63;
+// Time steps to increment number by
+pub const NUM_STEPS: u16 = 1;
 // Sleep timeout
-pub const SLEEP_TIME: u16 = 30;
+pub const SLEEP_TIME: u16 = 240;
